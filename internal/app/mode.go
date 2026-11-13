@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"local/miniproxy/internal/profile"
-	"local/miniproxy/internal/proxy"
+	"local/loop/internal/profile"
+	"local/loop/internal/proxy"
 )
 
 // The UI serializes this operation with connection and profile edits.

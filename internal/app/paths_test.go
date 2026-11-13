@@ -3,7 +3,7 @@ package app
 import (
 	"bytes"
 
-	"local/miniproxy/internal/profile"
+	"local/loop/internal/profile"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,8 +11,8 @@ import (
 
 func TestAppUpdatesPreserveUserProfiles(t *testing.T) {
 	root := t.TempDir()
-	executable := filepath.Join(root, "MiniProxy.app", "Contents", "MacOS", "MiniProxy")
-	bundled := filepath.Join(root, "MiniProxy.app", "Contents", "Resources", "profiles")
+	executable := filepath.Join(root, "Loop.app", "Contents", "MacOS", "loop")
+	bundled := filepath.Join(root, "Loop.app", "Contents", "Resources", "profiles")
 	state := filepath.Join(root, "state")
 	os.MkdirAll(bundled, 0700)
 	os.WriteFile(filepath.Join(bundled, "config.json"), []byte("bundled policy"), 0600)
@@ -33,8 +33,8 @@ func TestAppUpdatesPreserveUserProfiles(t *testing.T) {
 
 func TestAppUpdateMigratesUserSourcesBeforeSeedingDefaultMain(t *testing.T) {
 	root := t.TempDir()
-	executable := filepath.Join(root, "MiniProxy.app", "Contents", "MacOS", "MiniProxy")
-	bundled := filepath.Join(root, "MiniProxy.app", "Contents", "Resources", "profiles")
+	executable := filepath.Join(root, "Loop.app", "Contents", "MacOS", "loop")
+	bundled := filepath.Join(root, "Loop.app", "Contents", "Resources", "profiles")
 	state := filepath.Join(root, "state")
 	target := filepath.Join(state, "profiles")
 	os.MkdirAll(bundled, 0700)

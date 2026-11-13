@@ -9,9 +9,9 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
-	"local/miniproxy/internal/app"
-	"local/miniproxy/internal/profile"
-	"local/miniproxy/internal/testutil"
+	"local/loop/internal/app"
+	"local/loop/internal/profile"
+	"local/loop/internal/testutil"
 )
 
 func TestRulesSectionsKeepGlobalIndexesAndGuardRecycledMenus(t *testing.T) {

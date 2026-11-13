@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"local/miniproxy/internal/profile"
-	"local/miniproxy/internal/proxy"
+	"local/loop/internal/profile"
+	"local/loop/internal/proxy"
 )
 
 // Options is shared by the command bootstrap and desktop composition root.
@@ -24,6 +24,7 @@ type Options struct {
 type Service struct {
 	Options
 	coreErr error
+	Remote  RemoteOperations
 }
 
 func NewService(options Options) *Service {
@@ -44,6 +45,10 @@ func (s *Service) Document() (name, path string) {
 }
 
 func (s *Service) ValidateDocument(ctx context.Context, name string, data []byte) error {
+	if s.Remote != nil {
+		_, err := s.Remote.Execute(ctx, Operation{Action: "validate_document", Name: name, Data: data})
+		return err
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -74,6 +79,10 @@ func (s *Service) ValidateDocument(ctx context.Context, name string, data []byte
 }
 
 func (s *Service) SaveDocument(ctx context.Context, data, expected []byte) ([]byte, error) {
+	if s.Remote != nil {
+		result, err := s.Remote.Execute(ctx, Operation{Action: "save_document", Data: data, Expected: expected})
+		return result.Document, err
+	}
 	name, path := s.Document()
 	return profile.SaveDocument(path, data, expected, func(data []byte) error {
 		return s.ValidateDocument(ctx, name, data)
@@ -117,6 +126,10 @@ func (s *Service) ValidateNodes(ctx context.Context, nodes []profile.Node) error
 }
 
 func (s *Service) SaveManual(ctx context.Context, node profile.Node) error {
+	if s.Remote != nil {
+		_, err := s.Remote.Execute(ctx, Operation{Action: "save_manual", Node: &node})
+		return err
+	}
 	if err := s.ValidateNodes(ctx, []profile.Node{node}); err != nil {
 		return err
 	}
@@ -127,6 +140,10 @@ func (s *Service) SaveManual(ctx context.Context, node profile.Node) error {
 }
 
 func (s *Service) UpdateSubscription(ctx context.Context, sub profile.Subscription) error {
+	if s.Remote != nil {
+		_, err := s.Remote.Execute(ctx, Operation{Action: "update_subscription", Subscription: &sub})
+		return err
+	}
 	nodes, err := profile.FetchClash(ctx, sub.URL)
 	if err != nil {
 		return err

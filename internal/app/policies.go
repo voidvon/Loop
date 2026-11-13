@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"local/miniproxy/internal/profile"
-	"local/miniproxy/internal/proxy"
+	"local/loop/internal/profile"
+	"local/loop/internal/proxy"
 )
 
 // SwitchStrategy serializes with mode/connection changes. The core is restarted

@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"local/miniproxy/internal/app"
-	"local/miniproxy/internal/profile"
-	"local/miniproxy/internal/testutil"
+	"local/loop/internal/app"
+	"local/loop/internal/profile"
+	"local/loop/internal/testutil"
 )
 
 func TestArgumentsDoNotLaunchOrInitializeProfiles(t *testing.T) {
@@ -50,6 +50,7 @@ func TestArgumentsDoNotLaunchOrInitializeProfiles(t *testing.T) {
 
 func TestManagementCommandsStayHeadless(t *testing.T) {
 	s := testutil.NewStore(t)
+	stateDir := t.TempDir()
 	if err := s.UpgradePolicyGroups(); err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +59,7 @@ func TestManagementCommandsStayHeadless(t *testing.T) {
 		return nil
 	}
 	var output bytes.Buffer
-	if err := Run([]string{"-profiles", s.Dir, "-list-nodes"}, &output, launch); err != nil {
+	if err := Run([]string{"-state-dir", stateDir, "-profiles", s.Dir, "-list-nodes"}, &output, launch); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(output.String(), "* manual\ta\t") {
@@ -72,7 +73,7 @@ func TestManagementCommandsStayHeadless(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Run([]string{"-profiles", s.Dir, "-select-source", "manual", "-select-node", "b"}, &output, launch); err != nil {
+	if err := Run([]string{"-state-dir", stateDir, "-profiles", s.Dir, "-select-source", "manual", "-select-node", "b"}, &output, launch); err != nil {
 		t.Fatal(err)
 	}
 	selection, err := s.Selection()
@@ -80,7 +81,7 @@ func TestManagementCommandsStayHeadless(t *testing.T) {
 		t.Fatalf("selection = %+v, error = %v", selection, err)
 	}
 	rendered := filepath.Join(t.TempDir(), "runtime.json")
-	if err := Run([]string{"-profiles", s.Dir, "-render-config", rendered}, &output, launch); err != nil {
+	if err := Run([]string{"-state-dir", stateDir, "-profiles", s.Dir, "-render-config", rendered}, &output, launch); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(rendered)

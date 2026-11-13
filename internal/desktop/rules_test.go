@@ -14,9 +14,9 @@ import (
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
 	prettyview "github.com/ideaconnect/go-fyne-pretty-view/v2"
-	"local/miniproxy/internal/app"
-	"local/miniproxy/internal/profile"
-	"local/miniproxy/internal/testutil"
+	"local/loop/internal/app"
+	"local/loop/internal/profile"
+	"local/loop/internal/testutil"
 )
 
 type rulesApplyTestBackend struct {
@@ -85,6 +85,7 @@ func TestRulesCanSaveOnlineAndSynchronizeConnectionAfterRestart(t *testing.T) {
 				t.Fatal("missing automatic reconnect", backend.starts)
 			}
 			after, _ := os.ReadFile(filepath.Join(s.Dir, profile.MainConfigName))
+			shell.configPane.Open()
 			if !bytes.Equal(p.baseline, after) || !bytes.Equal(shell.configPane.document.baseline, after) || bytes.Equal(before, after) != fail {
 				t.Fatal("rule list, editor and persisted config diverged")
 			}
@@ -113,6 +114,7 @@ func TestRuleFormsShareCoreValidationAndProtectEditorDrafts(t *testing.T) {
 	service := app.NewService(app.Options{Store: s, CorePath: core})
 	controller := newDocumentController(w, service)
 	editor := newConfigPane(w, controller)
+	editor.Open()
 	defer editor.Close()
 	editor.document.view.SetInputConfig(prettyview.InputConfig{DebounceFor: -1})
 	pane := newRulesPane(w, controller)

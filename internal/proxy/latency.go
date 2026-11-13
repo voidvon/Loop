@@ -79,7 +79,7 @@ func (p LatencyProber) Run(ctx context.Context, targets []ProbeTarget, result fu
 	if err != nil {
 		return err
 	}
-	temporary, err := os.MkdirTemp("", "miniproxy-latency-*")
+	temporary, err := os.MkdirTemp("", "loop-latency-*")
 	if err != nil {
 		return err
 	}

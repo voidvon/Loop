@@ -12,7 +12,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"local/miniproxy/internal/profile"
+	"local/loop/internal/profile"
 )
 
 // Source creation is a small link-only form; the existing node editor remains

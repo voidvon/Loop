@@ -5,7 +5,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"local/miniproxy/internal/profile"
+	"local/loop/internal/profile"
 )
 
 // A list reuses its rows while scrolling. UpdateItem binds both callbacks to
@@ -105,7 +105,7 @@ func (m *nodeManager) nodeMenu(sourceID, nodeID string) *fyne.Menu {
 		}),
 		m.managementAction("删除节点", theme.DeleteIcon(), func() {
 			if node := m.manualByID(nodeID); node != nil {
-				m.confirmDelete("删除节点", "删除“"+node.Name+"”？", func() error { return m.store.DeleteManual(nodeID) })
+				m.confirmDelete("删除节点", "删除“"+node.Name+"”？", func() error { return m.service.DeleteManual(nodeID) })
 			}
 		}),
 	)
@@ -130,7 +130,7 @@ func (m *nodeManager) subscriptionMenu(sourceID string) *fyne.Menu {
 		}),
 		m.managementAction("删除订阅", theme.DeleteIcon(), func() {
 			if source := m.sourceByID(sourceID); source != nil {
-				m.confirmDelete("删除订阅", "删除“"+source.Name+"”及其中的节点？", func() error { return m.store.DeleteSubscription(sourceID) })
+				m.confirmDelete("删除订阅", "删除“"+source.Name+"”及其中的节点？", func() error { return m.service.DeleteSubscription(sourceID) })
 			}
 		}),
 	)

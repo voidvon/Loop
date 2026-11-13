@@ -12,9 +12,9 @@ import (
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
 	prettyview "github.com/ideaconnect/go-fyne-pretty-view/v2"
-	"local/miniproxy/internal/app"
-	"local/miniproxy/internal/profile"
-	"local/miniproxy/internal/testutil"
+	"local/loop/internal/app"
+	"local/loop/internal/profile"
+	"local/loop/internal/testutil"
 )
 
 func TestStrategyDeleteRemovesOptionalReferencesAndSavesTogether(t *testing.T) {
@@ -128,6 +128,7 @@ func TestStrategyPageOwnsNodeSelectionAndPreservesDraft(t *testing.T) {
 	}
 	running = false
 	shell.SetModeEnabled(true)
+	shell.configPane.Open()
 	shell.configPane.document.view.SetInputConfig(prettyview.InputConfig{DebounceFor: -1})
 	a.Clipboard().SetContent(`{"route":{"final":"direct"}}`)
 	shell.configPane.document.view.SelectAll()

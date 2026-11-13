@@ -10,7 +10,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"local/miniproxy/internal/proxy"
+	"local/loop/internal/proxy"
 )
 
 type probeDisplay struct {

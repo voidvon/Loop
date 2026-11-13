@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"local/miniproxy/internal/tunhelper"
+	"local/loop/internal/tunhelper"
 )
 
 func main() {
@@ -18,7 +18,7 @@ func main() {
 	token := flag.String("token", "", "session token")
 	flag.Parse()
 	if os.Geteuid() != 0 || *socket == "" || len(*token) != 64 {
-		fmt.Fprintln(os.Stderr, "TUN 辅助进程必须由 MiniProxy 授权启动")
+		fmt.Fprintln(os.Stderr, "TUN 辅助进程必须由 Loop 授权启动")
 		os.Exit(1)
 	}
 	conn, err := net.DialTimeout("unix", *socket, 5*time.Second)

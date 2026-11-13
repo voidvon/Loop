@@ -7,20 +7,24 @@ import (
 	"fmt"
 	"time"
 
-	"local/miniproxy/internal/profile"
-	"local/miniproxy/internal/proxy"
+	"local/loop/internal/profile"
+	"local/loop/internal/proxy"
 )
 
 type RuleSaveResult struct {
-	Running bool
+	Running bool `json:"running"`
 	// Document is the resulting source, including a successful rollback on error.
-	Document []byte
+	Document []byte `json:"document,omitempty"`
 }
 
 // SaveRules applies a serialized rule edit while preserving connection intent.
 // The caller's context represents application shutdown, not a restart timeout;
 // each individual start has its own deadline so rollback can still reconnect.
 func (s *Service) SaveRules(ctx context.Context, backend proxy.Backend, draft, expected []byte, running bool) (RuleSaveResult, error) {
+	if s.Remote != nil {
+		result, err := s.Remote.Execute(ctx, Operation{Action: "save_rules", Data: draft, Expected: expected})
+		return result.Rules, err
+	}
 	result := RuleSaveResult{Running: running}
 	checkCtx, checkCancel := context.WithTimeout(ctx, 20*time.Second)
 	saved, err := s.SaveDocument(checkCtx, draft, expected)

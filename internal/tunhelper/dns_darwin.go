@@ -35,7 +35,7 @@ func startDNS(config map[string]any) (func(), <-chan struct{}, error) {
 	if server == "" {
 		return nil, nil, errors.New("TUN 缺少 IPv4 DNS 地址")
 	}
-	key := fmt.Sprintf("State:/Network/Service/MiniProxy-%d/DNS", time.Now().UnixNano())
+	key := fmt.Sprintf("State:/Network/Service/loop-%d/DNS", time.Now().UnixNano())
 	cmd := exec.Command("/usr/sbin/scutil")
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

@@ -19,6 +19,9 @@ func TestSystemFontFacesHaveCorrectNamesWeightsAndChineseGlyphs(t *testing.T) {
 	}
 	for name, resource := range map[string]fyne.Resource{"PingFangSC-Regular": fonts.regular, "PingFangSC-Semibold": fonts.semibold} {
 		data := resource.Content()
+		if cap(data) != len(data) {
+			t.Fatal("standalone font retains excess extraction capacity")
+		}
 		face, err := sfnt.Parse(data)
 		if err != nil {
 			t.Fatal(err)

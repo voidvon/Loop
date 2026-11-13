@@ -6,7 +6,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
-	"local/miniproxy/internal/autostart"
+	"local/loop/internal/autostart"
 )
 
 type startupService interface {
@@ -36,7 +36,7 @@ func newStartupPane() *startupPane {
 		}
 	})
 	p.toggle.Disable()
-	p.message = quietLabel("请使用打包后的 MiniProxy.app 设置登录自启。")
+	p.message = quietLabel("请使用打包后的 Loop.app 设置登录自启。")
 	p.settings = widget.NewButton("打开登录项设置", func() {
 		if !p.closed && !p.busy && p.service != nil {
 			p.service.OpenSettings()
@@ -46,7 +46,7 @@ func newStartupPane() *startupPane {
 	detail := quietLabel("进入 macOS 后自动打开主应用")
 	detail.Wrapping = fyne.TextWrapOff
 	row := container.NewBorder(nil, nil, nil, container.NewCenter(p.toggle), container.NewVBox(
-		sectionTitle("登录时启动 MiniProxy"), detail,
+		sectionTitle("登录时启动 Loop"), detail,
 	))
 	p.feedback = container.NewVBox(p.message, container.NewHBox(p.settings))
 	card := panel(inset(12, 12, 12, 12, container.NewVBox(
@@ -106,7 +106,7 @@ func (p *startupPane) apply(state autostart.Status, err error) {
 	p.feedback.Hide()
 	if state == autostart.RequiresApproval {
 		p.message.Importance = widget.WarningImportance
-		p.message.SetText("尚未生效，请在 macOS 登录项设置中允许 MiniProxy。")
+		p.message.SetText("尚未生效，请在 macOS 登录项设置中允许 Loop。")
 		p.message.Show()
 		p.settings.Show()
 		p.feedback.Show()

@@ -19,7 +19,7 @@ func CheckRouteConflict() error {
 			continue
 		} // An IPv6 route need not exist.
 		if iface := tunnelRouteInterface(string(output)); iface != "" {
-			return fmt.Errorf("已有 VPN / TUN 正在接管网络（%s），请先关闭它，再启动 MiniProxy 的 TUN 模式", iface)
+			return fmt.Errorf("已有 VPN / TUN 正在接管网络（%s），请先关闭它，再启动 Loop 的 TUN 模式", iface)
 		}
 	}
 	return nil

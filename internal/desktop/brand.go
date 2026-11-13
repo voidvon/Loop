@@ -7,13 +7,14 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	"local/loop/internal/app"
 )
 
 func sidebarBrand(status *widget.Label) fyne.CanvasObject {
 	icon := canvas.NewImageFromResource(theme.NewColoredResource(theme.ComputerIcon(), colorAccent))
 	icon.FillMode = canvas.ImageFillContain
 	icon.SetMinSize(fyne.NewSize(36, 36))
-	name := sectionTitle("MiniProxy")
+	name := sectionTitle(app.DisplayName)
 	name.Wrapping = fyne.TextWrapOff
 	status.SizeName = theme.SizeNameText
 	status.Wrapping = fyne.TextWrapOff

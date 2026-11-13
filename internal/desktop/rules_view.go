@@ -11,7 +11,7 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	"local/miniproxy/internal/profile"
+	"local/loop/internal/profile"
 )
 
 func (p *rulesPane) buildView() {

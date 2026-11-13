@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"local/miniproxy/internal/profile"
-	"local/miniproxy/internal/testutil"
+	"local/loop/internal/profile"
+	"local/loop/internal/testutil"
 )
 
 type ruleTestBackend struct {

@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"testing"
 
-	"local/miniproxy/internal/profile"
+	"local/loop/internal/profile"
 )
 
 func NewStore(t *testing.T) profile.Store {

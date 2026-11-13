@@ -85,7 +85,7 @@ func serve(ctx context.Context, conn net.Conn, token string, setupDNS func(map[s
 	if !filepath.IsAbs(req.Core) {
 		return errors.New("内核路径必须为绝对路径")
 	}
-	state, err := os.MkdirTemp("", "miniproxy-tun-root-*")
+	state, err := os.MkdirTemp("", "loop-tun-root-*")
 	if err != nil {
 		return err
 	}

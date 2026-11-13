@@ -6,9 +6,9 @@ package autostart
 #cgo CFLAGS: -x objective-c
 #cgo LDFLAGS: -framework Foundation -framework AppKit -framework ServiceManagement
 #include <stdlib.h>
-int miniproxyLoginItemStatus(char **message);
-int miniproxyLoginItemSetEnabled(int enabled, char **message);
-void miniproxyLoginItemOpenSettings(void);
+int loopLoginItemStatus(char **message);
+int loopLoginItemSetEnabled(int enabled, char **message);
+void loopLoginItemOpenSettings(void);
 */
 import "C"
 
@@ -19,7 +19,7 @@ import (
 
 func (Service) Status() (Status, error) {
 	var message *C.char
-	state := C.miniproxyLoginItemStatus(&message)
+	state := C.loopLoginItemStatus(&message)
 	return loginItemResult(state, message)
 }
 
@@ -29,11 +29,11 @@ func (Service) SetEnabled(enabled bool) (Status, error) {
 	if enabled {
 		requested = 1
 	}
-	state := C.miniproxyLoginItemSetEnabled(requested, &message)
+	state := C.loopLoginItemSetEnabled(requested, &message)
 	return loginItemResult(state, message)
 }
 
-func (Service) OpenSettings() { C.miniproxyLoginItemOpenSettings() }
+func (Service) OpenSettings() { C.loopLoginItemOpenSettings() }
 
 func loginItemResult(state C.int, message *C.char) (Status, error) {
 	var err error
@@ -52,7 +52,7 @@ func loginItemResult(state C.int, message *C.char) (Status, error) {
 		return RequiresApproval, err
 	default:
 		if err == nil {
-			err = errors.New("macOS 未找到此应用的登录项，请重新打开 MiniProxy.app 后重试")
+			err = errors.New("macOS 未找到此应用的登录项，请重新打开 Loop.app 后重试")
 		}
 		return Unavailable, err
 	}

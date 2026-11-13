@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -13,11 +14,12 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"local/miniproxy/internal/app"
-	"local/miniproxy/internal/profile"
+	"local/loop/internal/app"
+	"local/loop/internal/profile"
 )
 
 type nodeManager struct {
+	stopped    atomic.Bool
 	OnBusy     func(bool)
 	cancelWork context.CancelFunc
 	window     fyne.Window
@@ -223,7 +225,13 @@ func (m *nodeManager) background(title string, work func(context.Context) error,
 	go func() {
 		err := work(ctx)
 		cancel()
+		if m.stopped.Load() {
+			return
+		}
 		fyne.Do(func() {
+			if m.stopped.Load() {
+				return
+			}
 			progress.Hide()
 			m.cancelWork = nil
 			m.SetLocked(false)
@@ -237,4 +245,11 @@ func (m *nodeManager) background(title string, work func(context.Context) error,
 			success()
 		})
 	}()
+}
+
+func (m *nodeManager) Close() {
+	m.stopped.Store(true)
+	if m.cancelWork != nil {
+		m.cancelWork()
+	}
 }

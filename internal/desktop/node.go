@@ -12,7 +12,7 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 
-	"local/miniproxy/internal/profile"
+	"local/loop/internal/profile"
 )
 
 func fieldText(value any) string {

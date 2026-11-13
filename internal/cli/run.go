@@ -9,14 +9,15 @@ import (
 	"os"
 	"path/filepath"
 
-	"local/miniproxy/internal/app"
-	"local/miniproxy/internal/profile"
+	"local/loop/internal/app"
+	"local/loop/internal/control"
+	"local/loop/internal/profile"
 )
 
 // Run launches the desktop only when no non-GUI command was requested.
 // The launcher is supplied by the entry point so this package stays headless.
 func Run(args []string, output io.Writer, launch func(app.Options) error) error {
-	flags := flag.NewFlagSet("miniproxy", flag.ContinueOnError)
+	flags := flag.NewFlagSet("loop", flag.ContinueOnError)
 	flags.SetOutput(output)
 	config := flags.String("config", "", "调试用完整 sing-box 配置；绕过独立节点管理")
 	profiles := flags.String("profiles", "", "配置目录（包含主配置 config.json、nodes.json 等）")
@@ -30,14 +31,22 @@ func Run(args []string, output io.Writer, launch func(app.Options) error) error 
 	core := flags.String("core", "", "sing-box 内核路径（默认优先使用应用包内内核）")
 	helper := flags.String("tun-helper", "", "开发用 TUN 辅助程序路径")
 	check := flags.Bool("check-connection", false, "检查配置及节点连接后退出，不修改系统代理")
-	if err := flags.Parse(args); err != nil {
+	stateDir := flags.String("state-dir", "", "独立后台状态目录；不同目录的后台互不影响")
+	jsonOutput := flags.Bool("json", false, "后台控制命令输出 JSON，适用于脚本和 AI")
+	noTray := flags.Bool("no-tray", false, "启动后台时不显示 macOS 菜单栏")
+	flags.Usage = func() {
+		fmt.Fprintln(output, "Loop：桌面、后台与命令行控制")
+		flags.PrintDefaults()
+		fmt.Fprintln(output, "\n命令：daemon start|status|stop，status，connect，disconnect，mode [direct|rule|global]，policy list，policy select <组> <节点键>，ui")
+	}
+	if err := flags.Parse(commandFlags(flags, args)); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
 		}
 		return err
 	}
-	if flags.NArg() != 0 {
-		return errors.New("不支持位置参数，请使用 -help 查看用法")
+	if err := validateControl(flags.Args()); err != nil {
+		return err
 	}
 	if *config != "" && (*profiles != "" || *listNodes || *selectSource != "" || *selectNode != "" || *importSubscription != "" || *render != "") {
 		return errors.New("-config 不能与分离配置的管理命令同时使用")
@@ -46,6 +55,9 @@ func Run(args []string, output io.Writer, launch func(app.Options) error) error 
 		return errors.New("请同时提供 -select-source 和 -select-node")
 	}
 	commands := 0
+	if flags.NArg() != 0 {
+		commands++
+	}
 	for _, selected := range []bool{*listNodes, *selectSource != "", *importSubscription != "", *render != "", *check} {
 		if selected {
 			commands++
@@ -58,29 +70,43 @@ func Run(args []string, output io.Writer, launch func(app.Options) error) error 
 	if err != nil {
 		return err
 	}
-	stateRoot, err := os.UserConfigDir()
+	defaultState, err := app.DefaultStateDirectory()
 	if err != nil {
 		return err
 	}
-	options := app.Options{Executable: executable, StateDir: filepath.Join(stateRoot, "MiniProxy"), CorePath: *core, HelperPath: *helper}
+	options := app.Options{Executable: executable, StateDir: defaultState, CorePath: *core, HelperPath: *helper}
+	if *stateDir != "" {
+		options.StateDir, err = filepath.Abs(*stateDir)
+		if err != nil {
+			return err
+		}
+	}
 	if *config != "" {
 		options.ConfigPath, err = filepath.Abs(*config)
-	} else {
+	} else if flags.NArg() == 0 || *profiles != "" || startsDaemon(flags.Args()) {
 		options.Store.Dir, err = app.ProfileDirectory(executable, options.StateDir, *profiles)
 	}
 	if err != nil {
 		return err
 	}
 	store := options.Store
+	if flags.NArg() != 0 {
+		return runControl(flags.Args(), options, output, *jsonOutput, *noTray, *profiles != "" || *config != "")
+	}
 	switch {
 	case *importSubscription != "":
-		count, err := store.ImportSubscription(*subscriptionID, *subscriptionName, *importSubscription)
+		var count int
+		err := control.WithOfflineMutation(options.StateDir, func() error {
+			var err error
+			count, err = store.ImportSubscription(*subscriptionID, *subscriptionName, *importSubscription)
+			return err
+		})
 		if err != nil {
 			return err
 		}
 		fmt.Fprintf(output, "已导入订阅 %s，共 %d 个节点；分流规则和当前选择未修改\n", *subscriptionID, count)
 	case *selectSource != "":
-		if err := store.Select(profile.Selection{Source: *selectSource, Node: *selectNode}); err != nil {
+		if err := control.WithOfflineMutation(options.StateDir, func() error { return store.Select(profile.Selection{Source: *selectSource, Node: *selectNode}) }); err != nil {
 			return err
 		}
 		fmt.Fprintf(output, "已选择 %s / %s；下次启动连接生效，分流规则未修改\n", *selectSource, *selectNode)

@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"local/miniproxy/internal/profile"
+	"local/loop/internal/profile"
 )
 
 func ProfileDirectory(executable, stateDir, override string) (string, error) {
@@ -15,6 +15,9 @@ func ProfileDirectory(executable, stateDir, override string) (string, error) {
 	}
 	bundled := filepath.Join(filepath.Dir(executable), "..", "Resources", "profiles")
 	if _, err := os.Stat(filepath.Join(bundled, profile.MainConfigName)); err == nil {
+		if err := migrateInstalledState(stateDir); err != nil {
+			return "", fmt.Errorf("迁移旧版数据：%w", err)
+		}
 		target := filepath.Join(stateDir, "profiles")
 		// Migrate an installed user's own sources before considering bundle defaults.
 		legacy := false

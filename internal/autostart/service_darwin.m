@@ -13,14 +13,14 @@ static BOOL loginItemAvailable(char **message) {
     if (@available(macOS 13.0, *)) {
         NSBundle *bundle = NSBundle.mainBundle;
         if ([bundle.bundlePath.pathExtension isEqualToString:@"app"] && bundle.bundleIdentifier.length > 0) return YES;
-        loginItemMessage(message, @"请使用打包后的 MiniProxy.app 设置登录自启");
+        loginItemMessage(message, @"请使用打包后的 Loop.app 设置登录自启");
     } else {
         loginItemMessage(message, @"登录自启需要 macOS 13 或更高版本");
     }
     return NO;
 }
 
-int miniproxyLoginItemStatus(char **message) {
+int loopLoginItemStatus(char **message) {
     @autoreleasepool {
         if (!loginItemAvailable(message)) return -1;
         if (@available(macOS 13.0, *)) return (int)SMAppService.mainAppService.status;
@@ -28,7 +28,7 @@ int miniproxyLoginItemStatus(char **message) {
     }
 }
 
-int miniproxyLoginItemSetEnabled(int enabled, char **message) {
+int loopLoginItemSetEnabled(int enabled, char **message) {
     @autoreleasepool {
         if (!loginItemAvailable(message)) return -1;
         if (@available(macOS 13.0, *)) {
@@ -55,7 +55,7 @@ int miniproxyLoginItemSetEnabled(int enabled, char **message) {
     }
 }
 
-void miniproxyLoginItemOpenSettings(void) {
+void loopLoginItemOpenSettings(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
         if (@available(macOS 13.0, *)) [SMAppService openSystemSettingsLoginItems];
     });

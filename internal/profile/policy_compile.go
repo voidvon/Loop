@@ -159,7 +159,7 @@ func (s Store) compileStrategies(config map[string]any) (map[string]any, error) 
 			if value, exists := cache["cache_id"]; exists {
 				prefix = fmt.Sprint(value) + "/"
 			}
-			cache["cache_id"] = prefix + "miniproxy-" + sum
+			cache["cache_id"] = prefix + "loop-" + sum
 		}
 	}
 	return config, nil

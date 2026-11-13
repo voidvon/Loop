@@ -1,12 +1,12 @@
-// This entry preserves go run .; the canonical command is ./cmd/miniproxy.
+// This entry preserves go run .; the canonical command is ./cmd/loop.
 package main
 
 import (
 	"log"
 	"os"
 
-	"local/miniproxy/internal/cli"
-	"local/miniproxy/internal/desktop"
+	"local/loop/internal/cli"
+	"local/loop/internal/desktop"
 )
 
 func main() {

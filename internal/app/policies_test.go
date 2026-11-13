@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"local/miniproxy/internal/profile"
-	"local/miniproxy/internal/proxy"
-	"local/miniproxy/internal/testutil"
+	"local/loop/internal/profile"
+	"local/loop/internal/proxy"
+	"local/loop/internal/testutil"
 )
 
 func TestStrategySwitchReconnectAndRollback(t *testing.T) {

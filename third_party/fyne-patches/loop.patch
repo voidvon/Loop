@@ -1,0 +1,1238 @@
+diff --git a/go.mod b/go.mod
+index 15dcd45..688d738 100644
+--- a/go.mod
++++ b/go.mod
+@@ -7,6 +7,7 @@ require (
+ 	github.com/BurntSushi/toml v1.6.0
+ 	github.com/FyshOS/fancyfs v0.0.1
+ 	github.com/anthonynsimon/bild v0.14.0
++	github.com/clipperhouse/uax29/v2 v2.2.0
+ 	github.com/fogleman/gg v1.3.0
+ 	github.com/fsnotify/fsnotify v1.9.0
+ 	github.com/fyne-io/gl-js v0.2.1-0.20260315212741-029c47fd27e8
+@@ -44,7 +45,6 @@ require (
+ 
+ require (
+ 	github.com/akavel/rsrc v0.10.2 // indirect
+-	github.com/clipperhouse/uax29/v2 v2.2.0 // indirect
+ 	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
+ 	github.com/davecgh/go-spew v1.1.1 // indirect
+ 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
+diff --git a/internal/painter/font.go b/internal/painter/font.go
+index a81dc53..0656958 100644
+--- a/internal/painter/font.go
++++ b/internal/painter/font.go
+@@ -1,7 +1,6 @@
+ package painter
+ 
+ import (
+-	"bytes"
+ 	"image/color"
+ 	"image/draw"
+ 	"math"
+@@ -91,11 +90,14 @@ func lookupRuneFont(r rune, family string, aspect font.Aspect) *font.Face {
+ 
+ func lookupFaces(theme, fallback fyne.Resource, additional []fyne.Resource, family string, style fyne.TextStyle) (faces *dynamicFontMap) {
+ 	f1 := loadMeasureFont(theme)
++	if f1 == nil {
++		f1 = loadMeasureFont(fallback)
++	}
+ 	if theme == fallback {
+ 		faces = &dynamicFontMap{family: family, faces: []*font.Face{f1}}
+ 	} else {
+-		f2 := loadMeasureFont(fallback)
+-		faces = &dynamicFontMap{family: family, faces: []*font.Face{f1, f2}}
++		faces = &dynamicFontMap{family: family, faces: []*font.Face{f1}}
++		faces.addLazyFace(fallback)
+ 	}
+ 
+ 	aspect := font.Aspect{Style: font.StyleNormal}
+@@ -107,13 +109,14 @@ func lookupFaces(theme, fallback fyne.Resource, additional []fyne.Resource, fami
+ 	}
+ 
+ 	for _, added := range additional {
+-		faces.addFace(loadMeasureFont(added))
++		faces.addLazyFace(added)
+ 	}
+ 
+-	local := lookupLangFont(family, aspect)
+-	if local != nil {
+-		faces.addFace(local)
+-	}
++	// Most text is covered by the theme and bundled fallbacks. Resolving the
++	// locale font eagerly also parses a large CJK font even for ASCII-only
++	// text or an explicitly selected system CJK font.
++	faces.aspect = aspect
++	faces.languageFallback = true
+ 
+ 	return faces
+ }
+@@ -135,18 +138,28 @@ func CachedFontFace(style fyne.TextStyle, source fyne.Resource, o fyne.CanvasObj
+ 		return val
+ 	}
+ 
+-	scope := ""
+-	if o != nil { // for overridden themes get the cache key right
+-		scope = cache.WidgetScopeID(o)
++	th := theme.CurrentForWidget(o)
++	font1 := th.Font(style)
++	if style.Symbol && !style.Monospace && !style.Bold && !style.Italic {
++		font1 = theme.SymbolFont()
+ 	}
+-
+-	val, ok := fontCache.Load(cacheID{style: style, scope: scope})
++	// Color/size-only theme overrides use the same font resources. Key by the
++	// actual font and its fallback style, so each card does not allocate another
++	// full set of glyph caches. Decorations and tab width affect layout/drawing,
++	// not the selected font face.
++	fontStyle := fyne.TextStyle{Bold: style.Bold, Italic: style.Italic, Monospace: style.Monospace, Symbol: style.Symbol}
++	var localFallback fyne.Resource
++	if style.Monospace {
++		regular := th.Font(fyne.TextStyle{Bold: style.Bold, Italic: style.Italic})
++		if _, ok := regular.(fyne.FontFileResource); ok && regular != font1 {
++			localFallback = regular
++		}
++	}
++	key := cacheID{style: fontStyle, source: font1, fallback: localFallback}
++	val, ok := fontCache.Load(key)
+ 	if !ok {
+ 		var faces *dynamicFontMap
+ 
+-		th := theme.CurrentForWidget(o)
+-		font1 := th.Font(style)
+-
+ 		// Skip any nil fallback fonts — they can be nil when built with
+ 		// -tags no_emoji, and the lookupFaces loop expects non-nil entries.
+ 		var fallbacks []fyne.Resource
+@@ -154,6 +167,11 @@ func CachedFontFace(style fyne.TextStyle, source fyne.Resource, o fyne.CanvasObj
+ 			fallbacks = append(fallbacks, emoji)
+ 		}
+ 		fallbacks = append(fallbacks, theme.DefaultSymbolFont())
++		if localFallback != nil {
++			// Reuse the app's system CJK face for Chinese text in a monospace
++			// editor rather than parsing the same family again via fontscan.
++			fallbacks = append(fallbacks, localFallback)
++		}
+ 		switch {
+ 		case style.Monospace:
+ 			faces = lookupFaces(font1, theme.DefaultTextMonospaceFont(), fallbacks, fontscan.Monospace, style)
+@@ -181,7 +199,7 @@ func CachedFontFace(style fyne.TextStyle, source fyne.Resource, o fyne.CanvasObj
+ 		}
+ 
+ 		val = &FontCacheItem{Fonts: faces}
+-		fontCache.Store(cacheID{style: style, scope: scope}, val)
++		fontCache.Store(key, val)
+ 	}
+ 
+ 	return val
+@@ -225,13 +243,22 @@ func DrawStringOffset(dst draw.Image, s string, color color.Color, f shaping.Fon
+ }
+ 
+ func loadMeasureFont(data fyne.Resource) *font.Face {
+-	loaded, err := font.ParseTTF(bytes.NewReader(data.Content()))
++	var loaded *font.Font
++	var err error
++	if source, ok := data.(fyne.FontFileResource); ok {
++		path, index := source.FontFile()
++		loaded, err = measureFontCache.loadFile(path, index)
++	} else {
++		loaded, err = measureFontCache.load(data.Content())
++	}
+ 	if err != nil {
+ 		fyne.LogError("font load error", err)
+ 		return nil
+ 	}
+ 
+-	return loaded
++	// A Face has mutable glyph caches and size/variation settings. Share only
++	// its immutable Font tables, keeping a distinct Face for every consumer.
++	return font.NewFace(loaded)
+ }
+ 
+ // MeasureString returns how far dot would advance by drawing s with f.
+@@ -264,6 +291,11 @@ func float32ToFixed266(f float32) fixed.Int26_6 {
+ }
+ 
+ func measureText(text string, fontSize float32, style fyne.TextStyle, source fyne.Resource) (fyne.Size, float32) {
++	if name := systemFontName(source, style); name != "" {
++		if size, baseline, ok := measureSystemText(singleLineText(text), name, fontSize, style); ok {
++			return size, baseline
++		}
++	}
+ 	face := CachedFontFace(style, source, nil)
+ 	return MeasureString(face.Fonts, text, fontSize, style)
+ }
+@@ -568,8 +600,9 @@ type FontCacheItem struct {
+ }
+ 
+ type cacheID struct {
+-	style fyne.TextStyle
+-	scope string
++	style    fyne.TextStyle
++	source   fyne.Resource
++	fallback fyne.Resource
+ }
+ 
+ var (
+@@ -582,18 +615,45 @@ type noopLogger struct{}
+ func (n noopLogger) Printf(string, ...any) {}
+ 
+ type dynamicFontMap struct {
+-	faces  []*font.Face
+-	family string
++	faces            []*font.Face
++	pending          map[int]*pendingFont
++	family           string
++	aspect           font.Aspect
++	languageFallback bool
+ }
+ 
+ func (d *dynamicFontMap) ResolveFace(r rune) *font.Face {
+-	for _, f := range d.faces {
++	for i, f := range d.faces {
++		if f == nil {
++			candidate := d.pending[i]
++			if candidate == nil {
++				continue
++			}
++			if glyph, ok := candidate.coverage.Lookup(r); !ok || glyph == 0 {
++				continue
++			}
++			f = loadMeasureFont(candidate.source)
++			d.faces[i] = f
++			delete(d.pending, i)
++			if f == nil {
++				continue
++			}
++		}
+ 		if _, ok := f.NominalGlyph(r); ok {
+ 			return f
+ 		}
+ 	}
+ 
+-	toAdd := lookupRuneFont(r, d.family, font.Aspect{})
++	if d.languageFallback {
++		d.languageFallback = false
++		if local := lookupLangFont(d.family, d.aspect); local != nil {
++			d.addFace(local)
++			if _, ok := local.NominalGlyph(r); ok {
++				return local
++			}
++		}
++	}
++	toAdd := lookupRuneFont(r, d.family, d.aspect)
+ 	if toAdd != nil {
+ 		d.addFace(toAdd)
+ 		return toAdd
+@@ -605,3 +665,26 @@ func (d *dynamicFontMap) ResolveFace(r rune) *font.Face {
+ func (d *dynamicFontMap) addFace(f *font.Face) {
+ 	d.faces = append(d.faces, f)
+ }
++
++type pendingFont struct {
++	source   fyne.Resource
++	coverage font.Cmap
++}
++
++// Check coverage without expanding the fallback's outlines and shaping tables.
++// Preserve slot order when loading so a previously used fallback cannot change
++// priority for another glyph. All resolution occurs under runBufferMut.
++func (d *dynamicFontMap) addLazyFace(source fyne.Resource) {
++	coverage, err := fontCoverage(source)
++	if err != nil {
++		if face := loadMeasureFont(source); face != nil {
++			d.addFace(face)
++		}
++		return
++	}
++	if d.pending == nil {
++		d.pending = make(map[int]*pendingFont)
++	}
++	d.pending[len(d.faces)] = &pendingFont{source: source, coverage: coverage}
++	d.faces = append(d.faces, nil)
++}
+diff --git a/internal/painter/font_scope_test.go b/internal/painter/font_scope_test.go
+new file mode 100644
+index 0000000..171ec68
+--- /dev/null
++++ b/internal/painter/font_scope_test.go
+@@ -0,0 +1,39 @@
++package painter_test
++
++import (
++	"fyne.io/fyne/v2"
++	"fyne.io/fyne/v2/container"
++	"fyne.io/fyne/v2/internal/painter"
++	"fyne.io/fyne/v2/test"
++	"fyne.io/fyne/v2/theme"
++	"fyne.io/fyne/v2/widget"
++	"testing"
++)
++
++type overrideFontTheme struct {
++	fyne.Theme
++	font fyne.Resource
++}
++
++func (t overrideFontTheme) Font(fyne.TextStyle) fyne.Resource { return t.font }
++
++func TestColorThemeScopesShareFacesButDifferentFontsDoNot(t *testing.T) {
++	a := test.NewApp()
++	defer a.Quit()
++	painter.ClearFontCache()
++	font := theme.DefaultTextFont()
++	th := overrideFontTheme{Theme: theme.DefaultTheme(), font: font}
++	one, two := widget.NewLabel("one"), widget.NewLabel("two")
++	container.NewThemeOverride(one, th)
++	container.NewThemeOverride(two, th)
++	first := painter.CachedFontFace(fyne.TextStyle{}, nil, one)
++	second := painter.CachedFontFace(fyne.TextStyle{Underline: true, TabWidth: 8}, nil, two)
++	if first != second {
++		t.Fatal("color/theme scopes or text decorations duplicated glyph caches")
++	}
++	other := widget.NewLabel("other")
++	container.NewThemeOverride(other, overrideFontTheme{Theme: th.Theme, font: theme.DefaultTextBoldFont()})
++	if painter.CachedFontFace(fyne.TextStyle{}, nil, other) == first {
++		t.Fatal("different theme fonts shared one font map")
++	}
++}
+diff --git a/internal/painter/font_tables.go b/internal/painter/font_tables.go
+new file mode 100644
+index 0000000..5337748
+--- /dev/null
++++ b/internal/painter/font_tables.go
+@@ -0,0 +1,136 @@
++package painter
++
++import (
++	"bytes"
++	"crypto/sha256"
++	"fmt"
++	"os"
++	"path/filepath"
++	"sync"
++
++	"fyne.io/fyne/v2"
++	"github.com/go-text/typesetting/font"
++	"github.com/go-text/typesetting/font/opentype"
++	"github.com/go-text/typesetting/font/opentype/tables"
++)
++
++// Color/theme changes invalidate Fyne's style caches, but not font files.
++// Keep a bounded cache of immutable parsed tables across styles and themes.
++// Content keys also handle resources whose bytes change without changing name.
++const parsedFontCacheLimit = 16
++
++var measureFontCache parsedFontStore
++
++type parsedFontStore struct {
++	sync.Mutex
++	fonts map[[sha256.Size]byte]*font.Font
++	order [][sha256.Size]byte // least recently used first
++}
++
++// Read only the small character map for pending fallbacks. In particular, do
++// not call Content on a file resource and recreate its full SFNT copy merely
++// to decide whether it has a Chinese/emoji glyph.
++func fontCoverage(source fyne.Resource) (font.Cmap, error) {
++	var loader *opentype.Loader
++	if backed, ok := source.(fyne.FontFileResource); ok {
++		path, index := backed.FontFile()
++		file, err := os.Open(path)
++		if err != nil {
++			return nil, err
++		}
++		defer file.Close()
++		loaders, err := opentype.NewLoaders(file)
++		if err != nil {
++			return nil, err
++		}
++		if index < 0 || index >= len(loaders) {
++			return nil, fmt.Errorf("invalid font collection index %d", index)
++		}
++		loader = loaders[index]
++	} else {
++		var err error
++		loader, err = opentype.NewLoader(bytes.NewReader(source.Content()))
++		if err != nil {
++			return nil, err
++		}
++	}
++	raw, _ := loader.RawTable(opentype.MustNewTag("OS/2"))
++	os2, _, _ := tables.ParseOs2(raw)
++	raw, err := loader.RawTable(opentype.MustNewTag("cmap"))
++	if err != nil {
++		return nil, err
++	}
++	cmap, _, err := tables.ParseCmap(raw)
++	if err != nil {
++		return nil, err
++	}
++	parsed, _, err := font.ProcessCmap(cmap, os2.FontPage())
++	return parsed, err
++}
++
++func (c *parsedFontStore) load(data []byte) (*font.Font, error) {
++	key := sha256.Sum256(data)
++	return c.loadKey(key, func() (*font.Font, error) {
++		loader, err := opentype.NewLoader(bytes.NewReader(data))
++		if err != nil {
++			return nil, err
++		}
++		return font.NewFont(loader)
++	})
++}
++
++func (c *parsedFontStore) loadFile(path string, index int) (*font.Font, error) {
++	path, err := filepath.Abs(path)
++	if err != nil {
++		return nil, err
++	}
++	file, err := os.Open(path)
++	if err != nil {
++		return nil, err
++	}
++	defer file.Close()
++	info, err := file.Stat()
++	if err != nil {
++		return nil, err
++	}
++	key := sha256.Sum256([]byte(fmt.Sprintf("file:%s:%d:%d:%d", path, index, info.Size(), info.ModTime().UnixNano())))
++	return c.loadKey(key, func() (*font.Font, error) {
++		loaders, err := opentype.NewLoaders(file)
++		if err != nil {
++			return nil, err
++		}
++		if index < 0 || index >= len(loaders) {
++			return nil, fmt.Errorf("invalid font collection index %d", index)
++		}
++		return font.NewFont(loaders[index])
++	})
++}
++
++func (c *parsedFontStore) loadKey(key [sha256.Size]byte, parse func() (*font.Font, error)) (*font.Font, error) {
++	c.Lock()
++	defer c.Unlock()
++	if parsed := c.fonts[key]; parsed != nil {
++		for i, existing := range c.order {
++			if existing == key {
++				copy(c.order[i:], c.order[i+1:])
++				c.order[len(c.order)-1] = key
++				break
++			}
++		}
++		return parsed, nil
++	}
++	parsed, err := parse()
++	if err != nil {
++		return nil, err
++	}
++	if c.fonts == nil {
++		c.fonts = make(map[[sha256.Size]byte]*font.Font)
++	}
++	if len(c.order) == parsedFontCacheLimit {
++		delete(c.fonts, c.order[0])
++		c.order = c.order[1:]
++	}
++	c.fonts[key] = parsed
++	c.order = append(c.order, key)
++	return parsed, nil
++}
+diff --git a/internal/painter/font_tables_test.go b/internal/painter/font_tables_test.go
+new file mode 100644
+index 0000000..3b01cab
+--- /dev/null
++++ b/internal/painter/font_tables_test.go
+@@ -0,0 +1,141 @@
++package painter
++
++import (
++	"crypto/sha256"
++	"os"
++	"path/filepath"
++	"sync"
++	"testing"
++
++	"fyne.io/fyne/v2"
++	"fyne.io/fyne/v2/theme"
++	"github.com/go-text/typesetting/font"
++)
++
++func TestFontTablesSharedAcrossResourcesAndThemeChanges(t *testing.T) {
++	data := theme.DefaultTextFont().Content()
++	a := loadMeasureFont(fyne.NewStaticResource("one.ttf", data))
++	b := loadMeasureFont(fyne.NewStaticResource("two.ttf", append([]byte(nil), data...)))
++	if a == nil || b == nil || a == b || a.Font != b.Font {
++		t.Fatal("fonts must share immutable tables, with separate mutable faces")
++	}
++	a.SetPpem(12, 12)
++	if x, _ := b.Ppem(); x != 0 {
++		t.Fatal("face settings leaked to another consumer")
++	}
++	ClearFontCache()
++	c := loadMeasureFont(fyne.NewStaticResource("one.ttf", data))
++	if c.Font != a.Font {
++		t.Fatal("a color/theme change reparsed unchanged font tables")
++	}
++	changed := loadMeasureFont(fyne.NewStaticResource("one.ttf", theme.DefaultTextBoldFont().Content()))
++	if changed.Font == a.Font {
++		t.Fatal("resource names must not alias different font contents")
++	}
++}
++
++type fileOnlyFont struct{ path string }
++
++func (f fileOnlyFont) Name() string            { return "file-only.ttf" }
++func (f fileOnlyFont) FontFile() (string, int) { return f.path, 0 }
++func (f fileOnlyFont) Content() []byte         { panic("font painter must not materialize Content") }
++
++func TestFileFontReadsTablesWithoutKeepingContentOrFileOpen(t *testing.T) {
++	path := filepath.Join(t.TempDir(), "font.ttf")
++	if err := os.WriteFile(path, theme.DefaultTextFont().Content(), 0600); err != nil {
++		t.Fatal(err)
++	}
++	source := fileOnlyFont{path: path}
++	coverage, err := fontCoverage(source)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if _, ok := coverage.Lookup('A'); !ok {
++		t.Fatal("file-backed fallback lost its character map")
++	}
++	a := loadMeasureFont(source)
++	b := loadMeasureFont(source)
++	if a == nil || b == nil || a == b || a.Font != b.Font {
++		t.Fatal("file-backed fonts must share tables with independent faces")
++	}
++	// Fully parsed tables must remain usable after the source has been closed
++	// and removed. No glyph lookup should attempt another file read.
++	if err := os.Remove(path); err != nil {
++		t.Fatal(err)
++	}
++	glyph, ok := a.NominalGlyph('A')
++	if _, outlineOK := a.GlyphDataOutline(glyph); !ok || !outlineOK {
++		t.Fatal("parsed font still depended on the source file")
++	}
++	var cache parsedFontStore
++	if _, err := cache.loadFile(path, 0); err == nil {
++		t.Fatal("missing file was accepted")
++	}
++	if err := os.WriteFile(path, theme.DefaultTextFont().Content(), 0600); err != nil {
++		t.Fatal(err)
++	}
++	first, _ := cache.loadFile(path, 0)
++	if _, err := cache.loadFile(path, 1); err == nil {
++		t.Fatal("invalid collection index was accepted")
++	}
++	if err := os.WriteFile(path, theme.DefaultTextBoldFont().Content(), 0600); err != nil {
++		t.Fatal(err)
++	}
++	second, err := cache.loadFile(path, 0)
++	if err != nil || second == first {
++		t.Fatal("file replacement reused stale font tables", err)
++	}
++}
++
++func TestFallbacksStayLazyUntilTheirGlyphIsNeeded(t *testing.T) {
++	base, fallback := theme.DefaultTextFont(), theme.DefaultSymbolFont()
++	faces := lookupFaces(base, base, []fyne.Resource{fallback}, "sans-serif", fyne.TextStyle{})
++	if len(faces.pending) != 1 || faces.faces[1] != nil {
++		t.Fatal("fallback was parsed before use")
++	}
++	faces.ResolveFace('A')
++	if faces.faces[1] != nil {
++		t.Fatal("ASCII text loaded the symbol fallback")
++	}
++	resolved := faces.ResolveFace('⌘')
++	if faces.faces[1] == nil || resolved != faces.faces[1] || len(faces.pending) != 0 {
++		t.Fatal("a missing symbol did not load its fallback in order")
++	}
++}
++
++func TestFontTableCacheConcurrentAndBounded(t *testing.T) {
++	var cache parsedFontStore
++	data := theme.DefaultTextFont().Content()
++	var group sync.WaitGroup
++	parsed := make([]*font.Font, 8)
++	for i := range parsed {
++		group.Add(1)
++		go func() {
++			defer group.Done()
++			var err error
++			parsed[i], err = cache.load(data)
++			if err != nil {
++				t.Error(err)
++			}
++		}()
++	}
++	group.Wait()
++	for _, face := range parsed {
++		if face != parsed[0] {
++			t.Fatal("concurrent loads parsed the same data more than once")
++		}
++	}
++	// Extra padding changes the content key without changing font tables.
++	for i := 0; i < parsedFontCacheLimit; i++ {
++		variant := append(append([]byte(nil), data...), byte(i))
++		if _, err := cache.load(variant); err != nil {
++			t.Fatal(err)
++		}
++	}
++	if len(cache.fonts) != parsedFontCacheLimit || cache.fonts[sha256.Sum256(data)] != nil {
++		t.Fatal("unused fonts were not evicted from the bounded cache")
++	}
++	if _, err := cache.load([]byte("invalid")); err == nil || len(cache.fonts) != parsedFontCacheLimit {
++		t.Fatal("an invalid font polluted the cache")
++	}
++}
+diff --git a/internal/painter/gl/texture.go b/internal/painter/gl/texture.go
+index e82bc63..0a0bfaf 100644
+--- a/internal/painter/gl/texture.go
++++ b/internal/painter/gl/texture.go
+@@ -11,7 +11,6 @@ import (
+ 	"fyne.io/fyne/v2/canvas"
+ 	"fyne.io/fyne/v2/internal/cache"
+ 	paint "fyne.io/fyne/v2/internal/painter"
+-	"fyne.io/fyne/v2/theme"
+ )
+ 
+ const floatEqualityThreshold = 1e-9
+@@ -195,18 +194,12 @@ func (p *painter) newGlRasterTexture(obj fyne.CanvasObject) Texture {
+ 
+ func (p *painter) newGlTextTexture(obj fyne.CanvasObject) Texture {
+ 	text := obj.(*canvas.Text)
+-	color := text.Color
+-	if color == nil {
+-		color = theme.Color(theme.ColorNameForeground)
+-	}
+-
+ 	bounds := text.MinSize()
+ 	width := int(math.Ceil(float64(p.textureScale(bounds.Width) + paint.VectorPad(text)))) // potentially italic overspill
+ 	height := int(math.Ceil(float64(p.textureScale(bounds.Height) + paint.TextVectorPad))) // space below for descenders / underline
+ 	img := image.NewRGBA(image.Rect(0, 0, width, height))
+ 
+-	face := paint.CachedFontFace(text.TextStyle, text.FontSource, text)
+-	paint.DrawString(img, text.Text, color, face.Fonts, text.TextSize, p.pixScale, text.TextStyle)
++	paint.DrawCanvasText(img, text, p.pixScale, 0)
+ 	return p.imgToTexture(img, canvas.ImageScaleSmooth)
+ }
+ 
+@@ -222,13 +215,8 @@ func (p *painter) clippedTextTexture(text *canvas.Text, visibleOffset, visibleWi
+ 
+ 	offset, width := textTextureWindow(visibleOffset, visibleWidth, fullWidth, p.maxTextureSize)
+ 
+-	color := text.Color
+-	if color == nil {
+-		color = theme.Color(theme.ColorNameForeground)
+-	}
+ 	img := image.NewRGBA(image.Rect(0, 0, width, height))
+-	face := paint.CachedFontFace(text.TextStyle, text.FontSource, text)
+-	paint.DrawStringOffset(img, text.Text, color, face.Fonts, text.TextSize, p.pixScale, text.TextStyle, offset)
++	paint.DrawCanvasText(img, text, p.pixScale, offset)
+ 	texture := p.imgToTexture(img, canvas.ImageScaleSmooth)
+ 
+ 	if p.clippedTextTextures == nil {
+diff --git a/internal/painter/software/draw.go b/internal/painter/software/draw.go
+index da45984..35ca623 100644
+--- a/internal/painter/software/draw.go
++++ b/internal/painter/software/draw.go
+@@ -250,8 +250,7 @@ func drawText(c fyne.Canvas, text *canvas.Text, pos fyne.Position, base *image.N
+ 		color = theme.Color(theme.ColorNameForeground)
+ 	}
+ 
+-	face := painter.CachedFontFace(text.TextStyle, text.FontSource, text)
+-	painter.DrawString(txtImg, text.Text, color, face.Fonts, text.TextSize, c.Scale(), text.TextStyle)
++	painter.DrawCanvasText(txtImg, text, c.Scale(), 0)
+ 
+ 	size := text.Size()
+ 	offsetX := float32(0)
+diff --git a/internal/painter/text_coretext_darwin.go b/internal/painter/text_coretext_darwin.go
+new file mode 100644
+index 0000000..4969ae9
+--- /dev/null
++++ b/internal/painter/text_coretext_darwin.go
+@@ -0,0 +1,56 @@
++//go:build darwin && cgo && !ios
++
++package painter
++
++/*
++#cgo LDFLAGS: -framework Foundation -framework CoreText -framework CoreGraphics
++#include <stdlib.h>
++#include "text_coretext_darwin.h"
++*/
++import "C"
++
++import (
++	"image"
++	"image/color"
++	"math"
++	"unsafe"
++
++	"fyne.io/fyne/v2"
++)
++
++func nativeFlag(value bool) C.int {
++	if value {
++		return 1
++	}
++	return 0
++}
++
++func measureSystemText(text, name string, size float32, style fyne.TextStyle) (fyne.Size, float32, bool) {
++	if size <= 0 || math.IsNaN(float64(size)) || math.IsInf(float64(size), 0) {
++		return fyne.Size{}, 0, false
++	}
++	input, fontName := C.CString(text), C.CString(name)
++	defer C.free(unsafe.Pointer(input))
++	defer C.free(unsafe.Pointer(fontName))
++	metrics := C.loopTextMeasure(input, C.size_t(len(text)), fontName, C.double(size), nativeFlag(style.Italic), nativeFlag(style.Monospace), C.int(style.TabWidth))
++	return fyne.NewSize(float32(metrics.width), float32(metrics.height)), float32(metrics.baseline), metrics.ok != 0
++}
++
++func drawSystemText(dst *image.RGBA, text, name string, size, scale float32, style fyne.TextStyle, ink color.NRGBA, offset int) bool {
++	if size <= 0 || scale <= 0 || math.IsNaN(float64(size+scale)) || math.IsInf(float64(size+scale), 0) {
++		return false
++	}
++	if dst.Rect.Empty() {
++		return true
++	}
++	if dst.Stride < dst.Rect.Dx()*4 || len(dst.Pix)/dst.Stride < dst.Rect.Dy() {
++		return false
++	}
++	input, fontName := C.CString(text), C.CString(name)
++	defer C.free(unsafe.Pointer(input))
++	defer C.free(unsafe.Pointer(fontName))
++	// The synchronous C call only borrows the RGBA byte buffer. CoreGraphics
++	// releases the context before returning and never keeps a Go pointer.
++	ok := C.loopTextDraw((*C.uint8_t)(unsafe.Pointer(&dst.Pix[0])), C.int(dst.Rect.Dx()), C.int(dst.Rect.Dy()), C.int(dst.Stride), input, C.size_t(len(text)), fontName, C.double(size), nativeFlag(style.Italic), nativeFlag(style.Monospace), C.int(style.TabWidth), C.double(scale), C.int(offset), C.double(ink.R)/255, C.double(ink.G)/255, C.double(ink.B)/255, C.double(ink.A)/255)
++	return ok != 0
++}
+diff --git a/internal/painter/text_coretext_darwin.h b/internal/painter/text_coretext_darwin.h
+new file mode 100644
+index 0000000..77b8f59
+--- /dev/null
++++ b/internal/painter/text_coretext_darwin.h
+@@ -0,0 +1,14 @@
++#include <stddef.h>
++#include <stdint.h>
++
++typedef struct {
++    double width, height, baseline;
++    int ok;
++} LoopTextMetrics;
++
++LoopTextMetrics loopTextMeasure(const char *text, size_t length, const char *name,
++                               double size, int italic, int mono, int tabWidth);
++int loopTextDraw(uint8_t *pixels, int width, int height, int stride,
++                 const char *text, size_t length, const char *name, double size,
++                 int italic, int mono, int tabWidth, double scale, int offset,
++                 double red, double green, double blue, double alpha);
+diff --git a/internal/painter/text_coretext_darwin.m b/internal/painter/text_coretext_darwin.m
+new file mode 100644
+index 0000000..c03a7bd
+--- /dev/null
++++ b/internal/painter/text_coretext_darwin.m
+@@ -0,0 +1,147 @@
++//go:build darwin && cgo && !ios
++
++#import <Foundation/Foundation.h>
++#import <CoreText/CoreText.h>
++#import <CoreGraphics/CoreGraphics.h>
++#include <math.h>
++#include <pthread.h>
++#include "text_coretext_darwin.h"
++
++// Only font objects are cached, never lines or application strings. Return
++// a retained font so eviction cannot invalidate another thread's active call.
++static pthread_mutex_t loopFontMutex = PTHREAD_MUTEX_INITIALIZER;
++static NSMutableDictionary *loopFonts;
++static NSMutableArray *loopFontOrder;
++static CTFontRef loopTextFont(const char *name, double size, int italic) {
++    NSString *fontName = [NSString stringWithUTF8String:name];
++    if (!fontName) return NULL;
++    NSString *key = [NSString stringWithFormat:@"%@:%a:%d", fontName, size, italic];
++    pthread_mutex_lock(&loopFontMutex);
++    if (!loopFonts) {
++        loopFonts = [[NSMutableDictionary alloc] init];
++        loopFontOrder = [[NSMutableArray alloc] init];
++    }
++    CTFontRef font = (CTFontRef)[loopFonts objectForKey:key];
++    if (font) {
++        CFRetain(font);
++        [loopFontOrder removeObject:key];
++        [loopFontOrder addObject:key];
++    } else {
++        font = CTFontCreateWithName((CFStringRef)fontName, size, NULL);
++        if (font && italic) {
++            CTFontRef styled = CTFontCreateCopyWithSymbolicTraits(font, size, NULL,
++                                        kCTFontItalicTrait, kCTFontItalicTrait);
++            if (!styled) {
++                CGAffineTransform slant = CGAffineTransformMake(1, 0, tan(12 * M_PI / 180), 1, 0, 0);
++                styled = CTFontCreateCopyWithAttributes(font, size, &slant, NULL);
++            }
++            if (styled) { CFRelease(font); font = styled; }
++        }
++        if (font) {
++            if (loopFontOrder.count >= 48) {
++                [loopFonts removeObjectForKey:[loopFontOrder objectAtIndex:0]];
++                [loopFontOrder removeObjectAtIndex:0];
++            }
++            [loopFonts setObject:(id)font forKey:key];
++            [loopFontOrder addObject:key];
++        }
++    }
++    pthread_mutex_unlock(&loopFontMutex);
++    return font;
++}
++
++// One line layout serves both measuring and painting. Fyne handles wrapping
++// above this layer. Tabs follow Fyne's fixed stops instead of CoreText defaults.
++static LoopTextMetrics loopTextProcess(const char *text, size_t length,
++        const char *name, double size, int italic, int mono, int tabWidth,
++        CGContextRef context, double scale, int offset) {
++    LoopTextMetrics metrics = {0};
++    CTFontRef font = loopTextFont(name, size, italic);
++    if (!font) return metrics;
++    NSString *string = [[[NSString alloc] initWithBytes:text length:length
++                                            encoding:NSUTF8StringEncoding] autorelease];
++    if (!string) { CFRelease(font); return metrics; }
++    NSDictionary *attributes = @{
++        (id)kCTFontAttributeName: (id)font,
++        (id)kCTForegroundColorFromContextAttributeName: @YES,
++        // The JSON editor places its caret on a fixed monospace grid.
++        (id)kCTLigatureAttributeName: @(mono ? 0 : 1)
++    };
++    NSArray *parts = [string componentsSeparatedByString:@"\t"];
++    NSMutableArray *lines = [NSMutableArray arrayWithCapacity:parts.count];
++    double ascent = CTFontGetAscent(font), descent = CTFontGetDescent(font);
++    double leading = fmax(0, CTFontGetLeading(font));
++    for (NSString *part in parts) {
++        NSAttributedString *attributed = [[[NSAttributedString alloc]
++                    initWithString:part attributes:attributes] autorelease];
++        CTLineRef line = CTLineCreateWithAttributedString((CFAttributedStringRef)attributed);
++        if (!line) { CFRelease(font); return metrics; }
++        CGFloat a = 0, d = 0, l = 0;
++        CTLineGetTypographicBounds(line, &a, &d, &l);
++        ascent = fmax(ascent, a); descent = fmax(descent, d); leading = fmax(leading, l);
++        [lines addObject:(id)line];
++        CFRelease(line);
++    }
++    if (tabWidth <= 0) tabWidth = 4;
++    double tab = 10 * tabWidth;
++    if (mono) {
++        NSAttributedString *space = [[[NSAttributedString alloc]
++                    initWithString:@" " attributes:attributes] autorelease];
++        CTLineRef spaceLine = CTLineCreateWithAttributedString((CFAttributedStringRef)space);
++        tab = CTLineGetTypographicBounds(spaceLine, NULL, NULL, NULL) * tabWidth;
++        CFRelease(spaceLine);
++    }
++    if (tab <= 0) tab = 10;
++    metrics.baseline = ascent;
++    metrics.height = ceil(ascent + descent + leading);
++    double x = 0;
++    if (context) {
++        // CoreGraphics uses a bottom-left baseline, while Fyne positions text
++        // from the top of the bitmap. Keep glyphs upright and convert the origin.
++        CGContextScaleCTM(context, scale, scale);
++        CGContextSetTextMatrix(context, CGAffineTransformIdentity);
++    }
++    NSUInteger index = 0;
++    for (id entry in lines) {
++        CTLineRef line = (CTLineRef)entry;
++        if (context) {
++            double baseline = (CGBitmapContextGetHeight(context) - ceil(ascent*scale)) / scale;
++            CGContextSetTextPosition(context, x - offset/scale, baseline);
++            CTLineDraw(line, context);
++        }
++        x += CTLineGetTypographicBounds(line, NULL, NULL, NULL);
++        if (++index < lines.count) x = (floor(x/tab) + 1)*tab;
++    }
++    metrics.width = x;
++    metrics.ok = 1;
++    CFRelease(font);
++    return metrics;
++}
++
++LoopTextMetrics loopTextMeasure(const char *text, size_t length, const char *name,
++                               double size, int italic, int mono, int tabWidth) {
++    @autoreleasepool {
++        return loopTextProcess(text, length, name, size, italic, mono, tabWidth, NULL, 1, 0);
++    }
++}
++
++int loopTextDraw(uint8_t *pixels, int width, int height, int stride,
++        const char *text, size_t length, const char *name, double size,
++        int italic, int mono, int tabWidth, double scale, int offset,
++        double red, double green, double blue, double alpha) {
++    @autoreleasepool {
++        CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
++        CGContextRef context = CGBitmapContextCreate(pixels, width, height, 8,
++                    stride, space, kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
++        CGColorSpaceRelease(space);
++        if (!context) return 0;
++        CGContextSetAlpha(context, alpha);
++        CGContextSetRGBFillColor(context, red, green, blue, 1);
++        CGContextSetShouldAntialias(context, true);
++        CGContextSetShouldSmoothFonts(context, false);
++        LoopTextMetrics metrics = loopTextProcess(text, length, name, size, italic,
++                                            mono, tabWidth, context, scale, offset);
++        CGContextRelease(context);
++        return metrics.ok;
++    }
++}
+diff --git a/internal/painter/text_coretext_darwin_test.go b/internal/painter/text_coretext_darwin_test.go
+new file mode 100644
+index 0000000..3d54003
+--- /dev/null
++++ b/internal/painter/text_coretext_darwin_test.go
+@@ -0,0 +1,180 @@
++//go:build darwin && cgo && !ios
++
++package painter
++
++import (
++	"bytes"
++	"image"
++	"image/color"
++	"math"
++	"sync"
++	"testing"
++	"unicode/utf8"
++
++	"fyne.io/fyne/v2"
++	"fyne.io/fyne/v2/canvas"
++)
++
++type nativeOnlyFont string
++
++func (f nativeOnlyFont) Name() string           { return string(f) + ".ttf" }
++func (f nativeOnlyFont) SystemFontName() string { return string(f) }
++func (f nativeOnlyFont) Content() []byte        { panic("native text must not parse Go font tables") }
++
++func TestCoreTextBypassesFontParsingAndRendersMixedScripts(t *testing.T) {
++	measureFontCache.Lock()
++	before := len(measureFontCache.fonts)
++	measureFontCache.Unlock()
++	for _, name := range []string{"PingFangSC-Regular", "PingFangSC-Semibold", "Menlo-Regular", "Menlo-Bold", "AppleSymbols"} {
++		for _, text := range []string{"Loop Agj", "首页 节点 策略 配置", "US 🇺🇸 🚀 中文", "e\u0301 ﬁ → ⌘", ""} {
++			style := fyne.TextStyle{Monospace: name == "Menlo-Regular", Italic: name == "PingFangSC-Semibold"}
++			size, baseline := measureText(text, 16, style, nativeOnlyFont(name))
++			if size.Height <= 0 || baseline <= 0 || baseline > size.Height || (text != "" && size.Width <= 0) {
++				t.Fatalf("%s %q: invalid metrics %v, baseline %v", name, text, size, baseline)
++			}
++			img := image.NewRGBA(image.Rect(0, 0, int(math.Ceil(float64(size.Width*2)))+8, int(size.Height*2)+8))
++			obj := &canvas.Text{Text: text, TextSize: 16, TextStyle: style, FontSource: nativeOnlyFont(name), Color: color.NRGBA{R: 200, G: 40, B: 70, A: 128}}
++			DrawCanvasText(img, obj, 2, 0)
++			pixels := 0
++			for i := 0; i < len(img.Pix); i += 4 {
++				a := img.Pix[i+3]
++				if a > 128 {
++					t.Fatal("native text or color emoji ignored text opacity")
++				}
++				if a > 0 {
++					pixels++
++				}
++				if img.Pix[i] > a || img.Pix[i+1] > a || img.Pix[i+2] > a {
++					t.Fatal("native bitmap is not premultiplied RGBA")
++				}
++			}
++			if (pixels > 0) != (text != "") {
++				t.Fatalf("%s %q: painted %d pixels", name, text, pixels)
++			}
++		}
++	}
++	measureFontCache.Lock()
++	defer measureFontCache.Unlock()
++	if len(measureFontCache.fonts) != before {
++		t.Fatal("native text populated the Go font table cache")
++	}
++}
++
++func TestCoreTextClippedDrawingMatchesFullTexture(t *testing.T) {
++	for _, scale := range []float32{1, 1.5, 2} {
++		text := "Loop 中文 🇺🇸 🚀\t长配置 abcdefghijklmnopqrstuvwxyz"
++		style := fyne.TextStyle{Monospace: true, TabWidth: 4}
++		font := "Menlo-Regular"
++		size, _, _ := measureSystemText(text, font, 16, style)
++		full := image.NewRGBA(image.Rect(0, 0, int(math.Ceil(float64(size.Width*scale)))+8, int(math.Ceil(float64(size.Height*scale)))+8))
++		ink := color.NRGBA{R: 21, G: 110, B: 220, A: 190}
++		if !drawSystemText(full, text, font, 16, scale, style, ink, 0) {
++			t.Fatal("full texture failed")
++		}
++		for _, offset := range []int{17, 67, 155} {
++			clip := image.NewRGBA(image.Rect(0, 0, 120, full.Rect.Dy()))
++			if !drawSystemText(clip, text, font, 16, scale, style, ink, offset) {
++				t.Fatal("clipped texture failed")
++			}
++			for y := 0; y < clip.Rect.Dy(); y++ {
++				i := full.PixOffset(offset, y)
++				j := clip.PixOffset(0, y)
++				if !bytes.Equal(full.Pix[i:i+clip.Stride], clip.Pix[j:j+clip.Stride]) {
++					t.Fatalf("scale %v offset %d row %d: clipped pixels differ from full texture", scale, offset, y)
++				}
++			}
++		}
++	}
++}
++
++func TestCoreTextBitmapIsUpright(t *testing.T) {
++	img := image.NewRGBA(image.Rect(0, 0, 80, 80))
++	if !drawSystemText(img, "L", "Menlo-Regular", 28, 2, fyne.TextStyle{}, color.NRGBA{A: 255}, 0) {
++		t.Fatal("drawing failed")
++	}
++	rows := make([]int, img.Rect.Dy())
++	for y := range rows {
++		for x := 0; x < img.Rect.Dx(); x++ {
++			if img.RGBAAt(x, y).A > 100 {
++				rows[y]++
++			}
++		}
++	}
++	first, last := 0, len(rows)-1
++	for first < last && rows[first] == 0 {
++		first++
++	}
++	for last > first && rows[last] == 0 {
++		last--
++	}
++	if rows[last]+rows[last-1] <= rows[first]+rows[first+1] {
++		t.Fatalf("L's bottom stroke is inverted or missing: first=%d last=%d rows=%v", first, last, rows)
++	}
++}
++
++func TestCoreTextTabsAndMonospaceGrid(t *testing.T) {
++	for _, style := range []fyne.TextStyle{{}, {TabWidth: 8}, {Monospace: true}, {Monospace: true, TabWidth: 2}} {
++		font := nativeOnlyFont("Menlo-Regular")
++		plain, _ := measureText("MMMMMMMMMM", 14, style, font)
++		single, _ := measureText("M", 14, style, font)
++		if math.Abs(float64(plain.Width-single.Width*10)) > 0.001 {
++			t.Fatal("monospace grid drifts from the rendered advance")
++		}
++		tabWidth := style.TabWidth
++		if tabWidth <= 0 {
++			tabWidth = 4
++		}
++		space, _ := measureText(" ", 14, style, font)
++		stop := float32(10 * tabWidth)
++		if style.Monospace {
++			stop = space.Width * float32(tabWidth)
++		}
++		got, _ := measureText("M\tM", 14, style, font)
++		want := (float32(math.Floor(float64(single.Width/stop)))+1)*stop + single.Width
++		if math.Abs(float64(got.Width-want)) > 0.001 {
++			t.Fatalf("tab advance = %v, want %v", got.Width, want)
++		}
++	}
++	if singleLineText("a\r\nb\xff") != "a�b�" {
++		t.Fatal("line breaks or invalid UTF-8 escaped normalization")
++	}
++}
++
++func TestCoreTextTruncatesOnGraphemeBoundariesWithoutGoFonts(t *testing.T) {
++	for _, cluster := range []string{"🇺🇸", "👩‍💻", "e\u0301", "中"} {
++		obj := &canvas.Text{TextSize: 16, FontSource: nativeOnlyFont("PingFangSC-Regular")}
++		prefix := "Loop " + cluster
++		size, _ := measureText(prefix+"…", 16, fyne.TextStyle{}, obj.FontSource)
++		text := prefix + " second node with a very long name"
++		count, full, ok := SystemTextTruncate(text, obj, size.Width+0.01, "…")
++		if !ok || full || count != utf8.RuneCountInString(prefix) {
++			t.Fatalf("%q: truncated at %d, full=%v ok=%v", cluster, count, full, ok)
++		}
++		count, full, ok = SystemTextTruncate(text, obj, 1000, "…")
++		if !ok || !full || count != utf8.RuneCountInString(text) {
++			t.Fatal("fitting label was truncated")
++		}
++	}
++}
++
++func TestCoreTextConcurrentFontCacheEviction(t *testing.T) {
++	var wg sync.WaitGroup
++	for worker := 0; worker < 8; worker++ {
++		wg.Add(1)
++		go func() {
++			defer wg.Done()
++			for i := 0; i < 64; i++ {
++				size := float32(10 + i)
++				style := fyne.TextStyle{Italic: i%2 == 0}
++				if _, _, ok := measureSystemText("中文🚀Ag", "PingFangSC-Regular", size, style); !ok {
++					t.Error("concurrent measurement failed")
++				}
++				img := image.NewRGBA(image.Rect(0, 0, 300, 100))
++				if !drawSystemText(img, "中文🚀Ag", "PingFangSC-Regular", size, 1, style, color.NRGBA{A: 255}, 0) {
++					t.Error("concurrent drawing failed")
++				}
++			}
++		}()
++	}
++	wg.Wait()
++}
+diff --git a/internal/painter/text_render.go b/internal/painter/text_render.go
+new file mode 100644
+index 0000000..a669a6e
+--- /dev/null
++++ b/internal/painter/text_render.go
+@@ -0,0 +1,94 @@
++package painter
++
++import (
++	"image"
++	"image/color"
++	"strings"
++	"unicode/utf8"
++
++	"fyne.io/fyne/v2"
++	"fyne.io/fyne/v2/canvas"
++	"fyne.io/fyne/v2/theme"
++	"github.com/clipperhouse/uax29/v2/graphemes"
++)
++
++func systemFontName(source fyne.Resource, style fyne.TextStyle) string {
++	if source == nil {
++		source = theme.Font(style)
++	}
++	if system, ok := source.(fyne.SystemFontResource); ok {
++		return system.SystemFontName()
++	}
++	return ""
++}
++
++func singleLineText(text string) string {
++	text = strings.ReplaceAll(text, "\r", "")
++	text = strings.ReplaceAll(text, "\n", string(rune(replacementChar)))
++	return strings.ToValidUTF8(text, string(rune(replacementChar)))
++}
++
++// SystemTextTruncate fits an ellipsized label with the same engine that paints
++// it. The returned prefix length is in runes, on a grapheme boundary, so flags,
++// combining marks and ZWJ emoji are kept together. Portable fonts return ok=false.
++func SystemTextTruncate(s string, text *canvas.Text, limit float32, suffix string) (count int, full, ok bool) {
++	source := text.FontSource
++	if source == nil {
++		source = theme.CurrentForWidget(text).Font(text.TextStyle)
++	}
++	name := systemFontName(source, text.TextStyle)
++	if name == "" {
++		return 0, false, false
++	}
++	measure := func(value string) (fyne.Size, bool) {
++		size, _, ok := measureSystemText(singleLineText(value), name, text.TextSize, text.TextStyle)
++		return size, ok
++	}
++	size, ok := measure(s)
++	if !ok {
++		return 0, false, false
++	}
++	if size.Width <= limit {
++		return utf8.RuneCountInString(s), true, true
++	}
++	ends := []int{0}
++	clusters := graphemes.FromString(s)
++	for clusters.Next() {
++		ends = append(ends, clusters.End())
++	}
++	low, high := 0, len(ends)-1
++	for low < high {
++		mid := (low + high + 1) / 2
++		size, ok := measure(s[:ends[mid]] + suffix)
++		if !ok {
++			return 0, false, false
++		}
++		if size.Width <= limit {
++			low = mid
++		} else {
++			high = mid - 1
++		}
++	}
++	return utf8.RuneCountInString(s[:ends[low]]), false, true
++}
++
++// DrawCanvasText uses the same platform text engine as measureText. Keeping
++// this dispatch above font parsing avoids loading Go font tables in a native
++// system-font UI. Explicit/custom fonts retain Fyne's portable renderer.
++func DrawCanvasText(dst *image.RGBA, text *canvas.Text, scale float32, offset int) {
++	ink := text.Color
++	if ink == nil {
++		ink = theme.Color(theme.ColorNameForeground)
++	}
++	source := text.FontSource
++	if source == nil {
++		source = theme.CurrentForWidget(text).Font(text.TextStyle)
++	}
++	if name := systemFontName(source, text.TextStyle); name != "" {
++		if drawSystemText(dst, singleLineText(text.Text), name, text.TextSize, scale, text.TextStyle, color.NRGBAModel.Convert(ink).(color.NRGBA), offset) {
++			return
++		}
++	}
++	face := CachedFontFace(text.TextStyle, text.FontSource, text)
++	DrawStringOffset(dst, text.Text, ink, face.Fonts, text.TextSize, scale, text.TextStyle, offset)
++}
+diff --git a/internal/painter/text_system_other.go b/internal/painter/text_system_other.go
+new file mode 100644
+index 0000000..f6926a9
+--- /dev/null
++++ b/internal/painter/text_system_other.go
+@@ -0,0 +1,18 @@
++//go:build !darwin || !cgo || ios
++
++package painter
++
++import (
++	"image"
++	"image/color"
++
++	"fyne.io/fyne/v2"
++)
++
++func measureSystemText(string, string, float32, fyne.TextStyle) (fyne.Size, float32, bool) {
++	return fyne.Size{}, 0, false
++}
++
++func drawSystemText(*image.RGBA, string, string, float32, float32, fyne.TextStyle, color.NRGBA, int) bool {
++	return false
++}
+diff --git a/resource.go b/resource.go
+index be439a5..0046c03 100644
+--- a/resource.go
++++ b/resource.go
+@@ -16,6 +16,26 @@ type Resource interface {
+ 	Content() []byte
+ }
+ 
++// FontFileResource optionally identifies a font face in a local SFNT/TTC file.
++// The font painter reads its tables directly instead of retaining Content as
++// another full font copy. Content must still return a standalone font for
++// consumers that do not support this interface. FontFile returns a zero-based
++// collection index (zero for an ordinary single-face file).
++//
++// Loop extension; not part of upstream Fyne.
++type FontFileResource interface {
++	Resource
++	FontFile() (path string, index int)
++}
++
++// SystemFontResource opts a font into the platform text renderer, when one is
++// available. The name is the installed font's PostScript name. Other platforms
++// and renderers can continue to use Content. Loop extension, not upstream API.
++type SystemFontResource interface {
++	Resource
++	SystemFontName() string
++}
++
+ // ThemedResource is a version of a resource that can be updated to match a certain theme color.
+ // The [ThemeColorName] will be used to look up the color for the current theme and colorize the resource.
+ //
+diff --git a/widget/richtext.go b/widget/richtext.go
+index c3fac87..b16bd34 100644
+--- a/widget/richtext.go
++++ b/widget/richtext.go
+@@ -1317,6 +1317,9 @@ func splitLines(seg RichTextSegment) []rowBoundary {
+ }
+ 
+ func truncateLimit(s string, text *canvas.Text, limit int, ellipsis []rune) (int, bool) {
++	if count, full, ok := paint.SystemTextTruncate(s, text, float32(limit), string(ellipsis)); ok {
++		return count, full
++	}
+ 	face := paint.CachedFontFace(text.TextStyle, text.FontSource, text)
+ 
+ 	runes := []rune(s)

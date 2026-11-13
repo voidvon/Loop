@@ -13,7 +13,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 	prettyview "github.com/ideaconnect/go-fyne-pretty-view/v2"
 
-	"local/miniproxy/internal/profile"
+	"local/loop/internal/profile"
 )
 
 type configDocument struct {
@@ -38,10 +38,36 @@ type configPane struct {
 }
 
 func newConfigPane(window fyne.Window, controller *documentController) *configPane {
-	p := &configPane{window: window, controller: controller}
+	p := &configPane{window: window, controller: controller, root: container.NewStack()}
+	p.document = &configDocument{name: controller.name, path: controller.path}
+	controller.HasDraft = p.HasDraft
+	controller.OnSaved = func(saved []byte) {
+		doc := p.document
+		// Rule forms can save before the first editor visit. Read the current
+		// file on first open instead of constructing an invisible editor.
+		if doc.view == nil {
+			return
+		}
+		doc.baseline = append([]byte(nil), saved...)
+		doc.view.SetData(saved, prettyview.FormatJSON)
+		doc.initial = append([]byte(nil), doc.view.Source()...)
+	}
+	return p
+}
+
+// Open allocates the editor and its renderers only on the first visit. Keep it
+// thereafter so navigation preserves drafts, undo history and cursor position.
+func (p *configPane) Open() {
+	if p.document.view == nil {
+		p.buildEditor()
+	}
+	p.Refresh()
+}
+
+func (p *configPane) buildEditor() {
+	window := p.window
 	p.status = quietLabel("")
-	doc := &configDocument{name: controller.name, path: controller.path}
-	p.document = doc
+	doc := p.document
 	doc.view = prettyview.New(prettyview.WithEditable(), prettyview.WithLineNumbers(), prettyview.WithFormat(prettyview.FormatJSON), prettyview.WithInputConfig(prettyview.InputConfig{DebounceFor: 250 * time.Millisecond, AutoFormat: prettyview.AutoFormatOff, MaxEditBytes: profile.MaxDocumentBytes}))
 	p.updateEditorPalette()
 	doc.view.SetOnChanged(func(string) {
@@ -81,15 +107,7 @@ func newConfigPane(window fyne.Window, controller *documentController) *configPa
 	})
 	header := container.NewBorder(nil, nil, nil,
 		container.NewCenter(container.NewHBox(p.reload, p.format, p.check, p.save)), pageHeading("配置"))
-	p.root = container.NewBorder(inset(0, 12, 0, 0, header), inset(10, 0, 0, 0, p.status), nil, nil, panel(editor))
-	controller.HasDraft = p.HasDraft
-	controller.OnSaved = func(saved []byte) {
-		doc.baseline = append([]byte(nil), saved...)
-		doc.view.SetData(saved, prettyview.FormatJSON)
-		doc.initial = append([]byte(nil), doc.view.Source()...)
-	}
-	p.Refresh()
-	return p
+	p.root.(*fyne.Container).Add(container.NewBorder(inset(0, 12, 0, 0, header), inset(10, 0, 0, 0, p.status), nil, nil, panel(editor)))
 }
 
 func (p *configPane) load() {
@@ -103,6 +121,9 @@ func (p *configPane) load() {
 		doc.loadError = errors.New("配置不能超过 2 MiB")
 		return
 	}
+	if doc.loaded && bytes.Equal(data, doc.baseline) {
+		return
+	}
 	doc.baseline = append([]byte(nil), data...)
 	if formatted, formatErr := profile.FormatDocument(data); formatErr == nil {
 		data = formatted
@@ -113,7 +134,7 @@ func (p *configPane) load() {
 }
 
 func (p *configPane) Refresh() {
-	if p.document == nil {
+	if p.document == nil || p.document.view == nil {
 		return
 	}
 	// A page refresh or node/mode switch must never replace an unsaved draft.
@@ -124,24 +145,26 @@ func (p *configPane) Refresh() {
 }
 
 func (p *configPane) updateStatus() {
-	if p.document == nil {
+	if p.document == nil || p.document.view == nil {
 		return
 	}
 	doc := p.document
+	source := doc.view.Source()
+	dirty := doc.loaded && !bytes.Equal(source, doc.initial)
 	editable := doc.loadError == nil
 	setEnabled(p.format, editable && !p.controller.working)
 	setEnabled(p.check, editable && p.controller.available && !p.controller.working)
-	setEnabled(p.save, editable && p.controller.available && !p.controller.working && doc.dirty())
+	setEnabled(p.save, editable && p.controller.available && !p.controller.working && dirty)
 	setEnabled(p.reload, !p.controller.working)
 	if doc.loadError != nil {
 		p.status.SetText("读取失败：" + doc.loadError.Error())
 		return
 	}
 	state := "已保存"
-	if doc.dirty() {
+	if dirty {
 		state = "未保存"
 	}
-	if _, err := profile.ParseDocument(doc.view.Source()); err != nil {
+	if _, err := profile.ParseDocument(source); err != nil {
 		p.status.SetText(state + " · " + err.Error())
 		return
 	}
@@ -195,8 +218,11 @@ func (p *configPane) Close() { p.controller.Close() }
 // PrettyView keys its syntax palette by OS variant. Reapply both variants when
 // the application appearance changes so explicit modes also theme the editor.
 func (p *configPane) updateEditorPalette() {
+	if p.document == nil || p.document.view == nil {
+		return
+	}
 	th := fyne.CurrentApp().Settings().Theme()
-	for _, variant := range []fyne.ThemeVariant{theme.VariantLight, theme.VariantDark, fyne.CurrentApp().Settings().ThemeVariant()} {
+	for _, variant := range []fyne.ThemeVariant{theme.VariantLight, theme.VariantDark} {
 		p.document.view.SetTheme(variant, prettyview.Theme{
 			Key:    th.Color(colorAccent, variant),
 			String: th.Color(theme.ColorNameSuccess, variant),

@@ -5,6 +5,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	"local/loop/internal/app"
 )
 
 const (
@@ -19,11 +20,7 @@ const (
 )
 
 // Menu-bar preferences affect presentation only and stay outside proxy profiles.
-type menuBarPreferences struct {
-	ShowModeLetter  bool
-	DimDisconnected bool
-	ShowPolicies    bool
-}
+type menuBarPreferences = app.TrayPreferences
 
 func defaultMenuBarPreferences() menuBarPreferences {
 	return menuBarPreferences{ShowModeLetter: true, DimDisconnected: true, ShowPolicies: true}
@@ -34,6 +31,27 @@ func loadMenuBarPreferences(prefs fyne.Preferences) menuBarPreferences {
 		ShowModeLetter:  prefs.BoolWithFallback(prefTrayModeLetter, true),
 		DimDisconnected: prefs.BoolWithFallback(prefTrayDim, true),
 		ShowPolicies:    prefs.BoolWithFallback(prefTrayPolicies, true),
+	}
+}
+
+func storeMenuBarPreferences(prefs fyne.Preferences, value menuBarPreferences) {
+	prefs.SetBool(prefTrayModeLetter, value.ShowModeLetter)
+	prefs.SetBool(prefTrayDim, value.DimDisconnected)
+	prefs.SetBool(prefTrayPolicies, value.ShowPolicies)
+}
+
+func (p *morePane) SetPreferences(value menuBarPreferences) {
+	storeMenuBarPreferences(p.preferences, value)
+	for _, setting := range []struct {
+		check *widget.Check
+		value bool
+	}{
+		{p.modeLetter, value.ShowModeLetter}, {p.dimDisconnected, value.DimDisconnected}, {p.policies, value.ShowPolicies},
+	} {
+		callback := setting.check.OnChanged
+		setting.check.OnChanged = nil
+		setting.check.SetChecked(setting.value)
+		setting.check.OnChanged = callback
 	}
 }
 

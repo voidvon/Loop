@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"local/miniproxy/internal/tunhelper"
+	"local/loop/internal/tunhelper"
 )
 
 type tunSession struct {
@@ -43,17 +43,17 @@ func prepareTUN(helper string) (*tunSession, *exec.Cmd, error) {
 		if err != nil {
 			return nil, nil, err
 		}
-		helper = filepath.Join(filepath.Dir(executable), "miniproxy-tun")
+		helper = filepath.Join(filepath.Dir(executable), "loop-tun")
 	}
 	helper, err := filepath.Abs(helper)
 	if err != nil {
 		return nil, nil, err
 	}
 	if info, err := os.Stat(helper); err != nil || info.IsDir() || info.Mode()&0111 == 0 {
-		return nil, nil, errors.New("找不到 TUN 辅助程序，请使用完整应用包，或先运行 go build -o miniproxy-tun ./cmd/miniproxy-tun")
+		return nil, nil, errors.New("找不到 TUN 辅助程序，请使用完整应用包，或先运行 go build -o loop-tun ./cmd/loop-tun")
 	}
 	// Keep the Unix socket below macOS's 104-byte path limit.
-	dir, err := os.MkdirTemp("/tmp", "miniproxy-tun-")
+	dir, err := os.MkdirTemp("/tmp", "loop-tun-")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -70,7 +70,7 @@ func prepareTUN(helper string) (*tunSession, *exec.Cmd, error) {
 	}
 	s := &tunSession{listener: listener, dir: dir, token: hex.EncodeToString(secret)}
 	command := shellQuote(helper) + " -socket " + shellQuote(filepath.Join(dir, "control.sock")) + " -token " + shellQuote(s.token)
-	script := "with timeout of 2147483647 seconds\ndo shell script " + strconv.Quote(command) + " with administrator privileges with prompt " + strconv.Quote("MiniProxy 需要创建 TUN 虚拟网卡并接管网络流量。停止连接后将释放虚拟网卡和路由。") + "\nend timeout"
+	script := "with timeout of 2147483647 seconds\ndo shell script " + strconv.Quote(command) + " with administrator privileges with prompt " + strconv.Quote("Loop 需要创建 TUN 虚拟网卡并接管网络流量。停止连接后将释放虚拟网卡和路由。") + "\nend timeout"
 	return s, exec.Command("/usr/bin/osascript", "-e", script), nil
 }
 

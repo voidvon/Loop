@@ -13,7 +13,7 @@ import (
 
 // CheckConfiguration validates a private temporary file without starting a connection.
 func CheckConfiguration(ctx context.Context, core string, config map[string]any) error {
-	temporary, err := os.MkdirTemp("", "miniproxy-validate-*")
+	temporary, err := os.MkdirTemp("", "loop-validate-*")
 	if err != nil {
 		return err
 	}

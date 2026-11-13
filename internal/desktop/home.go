@@ -52,7 +52,7 @@ func (s *desktopShell) homePage(status *widget.Label, toggle *widget.Button, cur
 	grid := container.NewVBox(
 		container.NewGridWithColumns(2, connection, node),
 		container.NewGridWithColumns(2, capture, policy),
-		inset(8, 0, 4, 4, quietLabel("停止或退出后，将恢复原有系统代理，或释放 TUN 网卡与路由。")),
+		inset(8, 0, 4, 4, quietLabel("关闭窗口后继续连接；停止代理或退出 Loop 时恢复网络设置。")),
 	)
 	return container.NewBorder(inset(0, 12, 0, 0, heading), nil, nil, nil, container.NewVScroll(grid))
 }

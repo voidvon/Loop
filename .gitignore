@@ -4,6 +4,12 @@
 /profiles/selection.json
 /bin/
 /dist/
+/.tmp/
+/.cache/
+/third_party/fyne/
+/third_party/.fyne-*
+/third_party/fyne-patches/.loop.patch-*
+*.pprof
 *.log
 .DS_Store
 

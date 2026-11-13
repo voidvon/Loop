@@ -1,19 +1,28 @@
-.PHONY: run build test test-headless vet package
+.PHONY: prepare update-fyne-patch run build test test-headless vet package
 
-run:
-	go run ./cmd/miniproxy
+prepare:
+	go run ./scripts/prepare-fyne.go
 
-build:
-	go build -o bin/miniproxy ./cmd/miniproxy
-	go build -o bin/miniproxy-tun ./cmd/miniproxy-tun
+update-fyne-patch:
+	go run ./scripts/prepare-fyne.go -refresh-patch
 
-test:
+run: build
+	./bin/loop
+
+build: prepare
+	go build -o bin/loop ./cmd/loop
+	go build -o bin/loopd ./cmd/loopd
+	go build -o bin/loopctl ./cmd/loopctl
+	go build -o bin/loop-tun ./cmd/loop-tun
+
+test: prepare
+	go test -race -tags test fyne.io/fyne/v2/internal/painter
 	go test -race ./...
 
-test-headless:
-	CGO_ENABLED=0 go test ./internal/app ./internal/autostart ./internal/cli ./internal/profile ./internal/proxy ./internal/tunhelper
+test-headless: prepare
+	CGO_ENABLED=0 go test ./internal/app ./internal/autostart ./internal/cli ./internal/control ./internal/statusbar ./internal/profile ./internal/proxy ./internal/tunhelper
 
-vet:
+vet: prepare
 	go vet ./...
 
 package:

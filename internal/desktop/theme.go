@@ -8,21 +8,19 @@ import (
 )
 
 const (
-	colorPanel        fyne.ThemeColorName = "miniproxy.panel"
-	colorSidebar      fyne.ThemeColorName = "miniproxy.sidebar"
-	colorOrange       fyne.ThemeColorName = "miniproxy.orange"
-	colorSecondary    fyne.ThemeColorName = "miniproxy.secondary"
-	colorAccent       fyne.ThemeColorName = "miniproxy.accent"
-	colorRuleCard     fyne.ThemeColorName = "miniproxy.rule-card"
-	colorBadgeDirect  fyne.ThemeColorName = "miniproxy.badge-direct"
-	colorBadgeProxy   fyne.ThemeColorName = "miniproxy.badge-proxy"
-	colorBadgeReject  fyne.ThemeColorName = "miniproxy.badge-reject"
-	colorBadgeMuted   fyne.ThemeColorName = "miniproxy.badge-muted"
-	colorTrayActive   fyne.ThemeColorName = "miniproxy.tray-active"
-	colorTrayInactive fyne.ThemeColorName = "miniproxy.tray-inactive"
-	appearanceSystem                      = "system"
-	appearanceLight                       = "light"
-	appearanceDark                        = "dark"
+	colorPanel       fyne.ThemeColorName = "loop.panel"
+	colorSidebar     fyne.ThemeColorName = "loop.sidebar"
+	colorOrange      fyne.ThemeColorName = "loop.orange"
+	colorSecondary   fyne.ThemeColorName = "loop.secondary"
+	colorAccent      fyne.ThemeColorName = "loop.accent"
+	colorRuleCard    fyne.ThemeColorName = "loop.rule-card"
+	colorBadgeDirect fyne.ThemeColorName = "loop.badge-direct"
+	colorBadgeProxy  fyne.ThemeColorName = "loop.badge-proxy"
+	colorBadgeReject fyne.ThemeColorName = "loop.badge-reject"
+	colorBadgeMuted  fyne.ThemeColorName = "loop.badge-muted"
+	appearanceSystem                     = "system"
+	appearanceLight                      = "light"
+	appearanceDark                       = "dark"
 )
 
 type clientPalette struct {
@@ -77,10 +75,6 @@ func (t *clientTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant)
 	variant = t.variant(variant)
 	p := palette(variant)
 	switch name {
-	case colorTrayActive:
-		return color.NRGBA{A: 255}
-	case colorTrayInactive:
-		return color.NRGBA{A: 128}
 	case theme.ColorNameBackground:
 		return p.background
 	case colorPanel:
@@ -147,8 +141,17 @@ func (t *clientTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant)
 }
 
 func (t *clientTheme) Font(style fyne.TextStyle) fyne.Resource {
-	if t.fonts == nil || style.Monospace || style.Symbol {
+	if t.fonts == nil {
 		return t.Theme.Font(style)
+	}
+	if style.Symbol {
+		return t.fonts.symbols
+	}
+	if style.Monospace {
+		if style.Bold {
+			return t.fonts.monoBold
+		}
+		return t.fonts.monospace
 	}
 	if style.Bold {
 		return t.fonts.semibold

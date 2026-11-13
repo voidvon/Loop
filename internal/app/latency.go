@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"local/miniproxy/internal/profile"
-	"local/miniproxy/internal/proxy"
+	"local/loop/internal/profile"
+	"local/loop/internal/proxy"
 )
 
 // StrategyProbeTargets snapshots current members and resolves group references
@@ -67,6 +67,23 @@ func (s *Service) StrategyProbeTargets(group string) ([]proxy.ProbeTarget, error
 	return targets, nil
 }
 func (s *Service) MeasureLatencies(ctx context.Context, targets []proxy.ProbeTarget, result func(string, proxy.LatencyResult)) error {
+	if s.Remote != nil {
+		values, err := s.Remote.Execute(ctx, Operation{Action: "measure_latencies", Targets: targets})
+		for _, value := range values.Latencies {
+			var probeErr error
+			if value.Error != "" {
+				probeErr = errors.New(value.Error)
+			}
+			if value.Timeout {
+				probeErr = context.DeadlineExceeded
+			}
+			if value.Cancelled {
+				probeErr = context.Canceled
+			}
+			result(value.Key, proxy.LatencyResult{Duration: value.Duration, Err: probeErr})
+		}
+		return err
+	}
 	if s.coreErr != nil {
 		return s.coreErr
 	}

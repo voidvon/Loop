@@ -10,15 +10,15 @@ import (
 	"path/filepath"
 	"time"
 
-	"local/miniproxy/internal/profile"
-	"local/miniproxy/internal/proxy"
+	"local/loop/internal/profile"
+	"local/loop/internal/proxy"
 )
 
 func CheckProfileConnection(core, config string, store profile.Store) error {
 	if config != "" {
 		return checkConnection(core, config)
 	}
-	temporary, err := os.MkdirTemp("", "miniproxy-check-*")
+	temporary, err := os.MkdirTemp("", "loop-check-*")
 	if err != nil {
 		return err
 	}
@@ -48,7 +48,7 @@ func checkConnection(core, config string) error {
 		return fmt.Errorf("检查端口 %s: %w", address, err)
 	}
 	listener.Close()
-	state, err := os.MkdirTemp("", "miniproxy-core-check-*")
+	state, err := os.MkdirTemp("", "loop-core-check-*")
 	if err != nil {
 		return err
 	}

@@ -9,10 +9,10 @@ import (
 
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
-	"local/miniproxy/internal/app"
-	"local/miniproxy/internal/profile"
-	"local/miniproxy/internal/proxy"
-	"local/miniproxy/internal/testutil"
+	"local/loop/internal/app"
+	"local/loop/internal/profile"
+	"local/loop/internal/proxy"
+	"local/loop/internal/testutil"
 )
 
 func TestStrategyLatencyLabelsAndCancellationControls(t *testing.T) {

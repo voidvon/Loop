@@ -22,7 +22,7 @@ func acquireLock(path string) (*os.File, error) {
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		f.Close()
-		return nil, errors.New("另一个 MiniProxy 实例正在运行，请先停止它")
+		return nil, errors.New("另一个 Loop 实例正在运行，请先停止它")
 	}
 	return f, nil
 }

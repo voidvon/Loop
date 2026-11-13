@@ -12,7 +12,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"local/miniproxy/internal/profile"
+	"local/loop/internal/profile"
 )
 
 var basicRuleKinds = []string{"domain", "domain_suffix", "domain_keyword", "ip_cidr", "ip_is_private"}

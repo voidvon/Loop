@@ -42,7 +42,7 @@ func writePrivateFile(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".miniproxy-*")
+	f, err := os.CreateTemp(filepath.Dir(path), ".loop-*")
 	if err != nil {
 		return err
 	}

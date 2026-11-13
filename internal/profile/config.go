@@ -83,7 +83,7 @@ func (s Store) EnsureMainConfig() error {
 	}
 	// Publish a complete private file without replacing one another process
 	// may have created during migration.
-	f, err := os.CreateTemp(s.Dir, ".miniproxy-migrate-*")
+	f, err := os.CreateTemp(s.Dir, ".loop-migrate-*")
 	if err != nil {
 		return err
 	}

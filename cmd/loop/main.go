@@ -4,8 +4,8 @@ import (
 	"log"
 	"os"
 
-	"local/miniproxy/internal/cli"
-	"local/miniproxy/internal/desktop"
+	"local/loop/internal/cli"
+	"local/loop/internal/desktop"
 )
 
 func main() {

@@ -11,9 +11,9 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	prettyview "github.com/ideaconnect/go-fyne-pretty-view/v2"
-	"local/miniproxy/internal/app"
-	"local/miniproxy/internal/profile"
-	"local/miniproxy/internal/testutil"
+	"local/loop/internal/app"
+	"local/loop/internal/profile"
+	"local/loop/internal/testutil"
 )
 
 func TestAppearanceRefreshesSurfacesAndPreservesDraftAndMode(t *testing.T) {
@@ -30,6 +30,7 @@ func TestAppearanceRefreshesSurfacesAndPreservesDraftAndMode(t *testing.T) {
 	selector := newAppearanceSelect(a, th)
 	shell.appearance.Add(selector)
 	a.Settings().AddListener(func(fyne.Settings) { shell.configPane.updateEditorPalette() })
+	shell.selectPage(pageConfig)
 	editor := shell.configPane.document.view
 	editor.SetInputConfig(prettyview.InputConfig{DebounceFor: -1})
 	a.Clipboard().SetContent(`{"route":{"final":"direct"}}`)

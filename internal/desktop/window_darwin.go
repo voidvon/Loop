@@ -6,10 +6,12 @@ package desktop
 #cgo CFLAGS: -x objective-c
 #cgo LDFLAGS: -framework Cocoa
 #include <stdint.h>
-void miniproxyWindowConfigure(uintptr_t handle, double headerHeight, double controlsWidth, double sidebarWidth);
-void miniproxyWindowMinimize(uintptr_t handle);
-void miniproxyWindowZoom(uintptr_t handle);
-void miniproxyWindowCleanup(uintptr_t handle);
+void loopWindowConfigure(uintptr_t handle, double headerHeight, double controlsWidth, double sidebarWidth);
+void loopWindowMinimize(uintptr_t handle);
+void loopWindowZoom(uintptr_t handle);
+void loopWindowCleanup(uintptr_t handle);
+void loopAppInstallQuit(void);
+void loopAppRestoreQuit(void);
 */
 import "C"
 
@@ -19,17 +21,49 @@ import (
 	"fyne.io/fyne/v2/driver"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/layout"
+	"sync"
 )
+
+var appQuit struct {
+	sync.RWMutex
+	action func()
+}
+
+//export loopAppRequestQuit
+func loopAppRequestQuit() {
+	appQuit.RLock()
+	action := appQuit.action
+	appQuit.RUnlock()
+	if action != nil {
+		fyne.Do(action)
+	}
+}
+
+// Cocoa's default Cmd+Q belongs to NSApplication, independently of Fyne's
+// custom menu items. Intercept termination while forwarding other delegate
+// messages to the toolkit's original delegate.
+func configureQuit(w fyne.Window, action func()) func() {
+	appQuit.Lock()
+	appQuit.action = action
+	appQuit.Unlock()
+	withMacWindow(w, func(C.uintptr_t) { C.loopAppInstallQuit() })
+	return func() {
+		appQuit.Lock()
+		appQuit.action = nil
+		appQuit.Unlock()
+		C.loopAppRestoreQuit()
+	}
+}
 
 func newAppWindow(a fyne.App) fyne.Window {
 	if desktopDriver, ok := a.Driver().(desktop.Driver); ok {
 		// Create without system decorations from the first frame. Native window
 		// capabilities are restored by configureWindow with its titlebar hidden.
 		w := desktopDriver.CreateSplashWindow()
-		w.SetTitle("MiniProxy")
+		w.SetTitle("Loop")
 		return w
 	}
-	return a.NewWindow("MiniProxy")
+	return a.NewWindow("Loop")
 }
 
 // Fyne owns the window; native operations use its public NativeWindow API and
@@ -55,8 +89,8 @@ func decorateWindow(w fyne.Window, shell *desktopShell, requestClose func()) {
 	sidebarWidth := shell.sidebar.MinSize().Width
 	header := newWindowHeader(windowActions{
 		close:    requestClose,
-		minimize: func() { withMacWindow(w, func(handle C.uintptr_t) { C.miniproxyWindowMinimize(handle) }) },
-		zoom:     func() { withMacWindow(w, func(handle C.uintptr_t) { C.miniproxyWindowZoom(handle) }) },
+		minimize: func() { withMacWindow(w, func(handle C.uintptr_t) { C.loopWindowMinimize(handle) }) },
+		zoom:     func() { withMacWindow(w, func(handle C.uintptr_t) { C.loopWindowZoom(handle) }) },
 	})
 	w.SetContent(container.New(windowFrameLayout{sidebarWidth: sidebarWidth}, shell.root, header))
 }
@@ -66,10 +100,10 @@ func decorateWindow(w fyne.Window, shell *desktopShell, requestClose func()) {
 func configureWindow(w fyne.Window, sidebarWidth float32) {
 	withMacWindow(w, func(handle C.uintptr_t) {
 		scale := w.Canvas().Scale()
-		C.miniproxyWindowConfigure(handle, C.double(windowHeaderHeight*scale), C.double((windowControlsLeft+3*windowControlPitch+10)*scale), C.double(sidebarWidth*scale))
+		C.loopWindowConfigure(handle, C.double(windowHeaderHeight*scale), C.double((windowControlsLeft+3*windowControlPitch+10)*scale), C.double(sidebarWidth*scale))
 	})
 }
 
 func cleanupWindow(w fyne.Window) {
-	withMacWindow(w, func(handle C.uintptr_t) { C.miniproxyWindowCleanup(handle) })
+	withMacWindow(w, func(handle C.uintptr_t) { C.loopWindowCleanup(handle) })
 }

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"fyne.io/fyne/v2/test"
-	"local/miniproxy/internal/autostart"
+	"local/loop/internal/autostart"
 )
 
 type startupStub struct {

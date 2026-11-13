@@ -11,7 +11,7 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 
-	"local/miniproxy/internal/app"
+	"local/loop/internal/app"
 )
 
 // documentController coordinates UI jobs for both the editor and rule forms.

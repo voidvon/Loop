@@ -1,26 +1,30 @@
-# MiniProxy
+# Loop
 
-Fyne / Go macOS 代理客户端，界面采用左侧导航、右侧内容布局，包含首页、节点、策略、规则、配置、更多六个入口。macOS 窗口按钮仅占左侧顶部，右侧标题与操作栏从窗口顶端开始，各页面采用紧凑的单行标题。首页控制代理开关；节点页管理节点和订阅；策略页统一选择节点与策略组；规则页管理 Final、本地规则和订阅规则；配置页直接编辑统一主配置；更多页采用左侧设置分类、右侧配置区域，提供开机自启和菜单栏设置。启动先校验配置和请求连通性，再设置系统代理或启动 TUN；停止、关闭窗口和 `⌘Q` 清理连接。
+Fyne / Go macOS 代理客户端，界面采用左侧导航、右侧内容布局，包含首页、节点、策略、规则、配置、更多六个入口。macOS 窗口按钮仅占左侧顶部，右侧标题与操作栏从窗口顶端开始，各页面采用紧凑的单行标题。首页控制代理开关；节点页管理节点和订阅；策略页统一选择节点与策略组；规则页管理 Final、本地规则和订阅规则；配置页直接编辑统一主配置；更多页采用左侧设置分类、右侧配置区域，提供开机自启和菜单栏设置。启动先校验配置和请求连通性，再设置系统代理或启动 TUN；关闭窗口退出 UI 并保留后台连接；`⌘Q` 或菜单栏“退出 Loop”停止后台并恢复代理设置。
 
 界面支持跟随系统、浅色和深色三种外观，可在侧边栏底部选择，重启后保留偏好。卡片、列表、弹窗、控件和配置编辑器同步配色。首页顶部切换分流模式，卡片中管理连接、默认策略和 TUN；界面优先使用 Fyne 标准 Button、RadioGroup、Check、Card、List 和 PopUpMenu，通过统一主题设置配色和系统字体；控件尺寸、圆角和阴影沿用框架标准，无 WebView。
 
 macOS 界面从本机加载苹方简体（PingFang SC）常规与半粗字重，字体不打入应用包；配置编辑器继续使用等宽字体。
 
-macOS 菜单栏图标通过 G / R / D 表示全局代理、自动分流、全局直连，未连接时透明度为 50%，连接后为 100%，图标随系统菜单栏配色。原生菜单可开关代理、展开所有策略组并切换节点、显示主窗口或退出。切换节点沿用策略页的连接恢复和编辑锁逻辑。更多 → 菜单栏提供模式字母、断开时半透明、策略列表三个显示开关，修改立即生效并在重启后保留；界面偏好独立于主配置，修改不会重启代理。
+macOS 菜单栏图标通过 G / R / D 表示全局代理、自动分流、全局直连，未连接时透明度为 50%，连接后为 100%，图标随系统菜单栏配色。原生菜单可开关代理、展开所有策略组并切换节点、显示主窗口或退出。菜单栏由独立后台持有，UI 退出后仍可切换节点并恢复连接。更多 → 菜单栏提供模式字母、断开时半透明、策略列表三个显示开关，修改立即生效并在重启后保留；界面偏好独立于主配置，修改不会重启代理。
 
-更多 → 开机自启提供「登录时启动 MiniProxy」开关，通过 macOS [SMAppService.mainAppService](https://developer.apple.com/documentation/servicemanagement/smappservice/mainapp?language=objc) 注册主应用登录项；进入 macOS 用户会话后打开应用，代理连接仍由首页控制。请在打包后的 MiniProxy.app 中设置，建议先放入「应用程序」。状态以系统登录项为准，每次打开该页面以及从系统设置返回时重新读取；等待系统允许时明确显示「尚未生效」并提供登录项设置入口，启用失败会恢复实际状态，等待允许的注册也可关闭。不写入节点、规则或主配置，关闭自启不会退出当前应用。
+更多 → 开机自启提供「登录时启动 Loop」开关，通过 macOS [SMAppService.mainAppService](https://developer.apple.com/documentation/servicemanagement/smappservice/mainapp?language=objc) 注册主应用登录项；进入 macOS 用户会话后打开应用，代理连接仍由首页控制。请在打包后的 Loop.app 中设置，建议先放入「应用程序」。状态以系统登录项为准，每次打开该页面以及从系统设置返回时重新读取；等待系统允许时明确显示「尚未生效」并提供登录项设置入口，启用失败会恢复实际状态，等待允许的注册也可关闭。不写入节点、规则或主配置，关闭自启不会退出当前应用。
 
-macOS 窗口从创建时就不带系统标题栏，避免启动时先显示再隐藏标题栏的闪现；随后恢复标准窗口的缩放、调整大小与最小化能力。左上角由 Fyne 绘制红、黄、绿三个控制按钮：关闭并清理连接、最小化到 Dock、放大／还原窗口。顶部空白区域可以拖动，双击可以放大／还原；窗口边缘仍可调整大小。关闭按钮沿用配置草稿确认。窗口操作通过 Fyne 公开的原生窗口接口和独立的 Cocoa 适配层完成；其他平台保留原生标题栏。
+macOS 窗口从创建时就不带系统标题栏，避免启动时先显示再隐藏标题栏的闪现；随后恢复标准窗口的缩放、调整大小与最小化能力。左上角由 Fyne 绘制红、黄、绿三个控制按钮：关闭 UI 并保留后台连接、最小化到 Dock、放大／还原窗口。顶部空白区域可以拖动，双击可以放大／还原；窗口边缘仍可调整大小。关闭按钮沿用配置草稿确认。窗口操作通过 Fyne 公开的原生窗口接口和独立的 Cocoa 适配层完成；其他平台保留原生标题栏。
 
 ## 项目结构
 
-入口使用 `cmd/miniproxy`，桌面界面、应用服务、配置领域和系统代理后端分别放在 `internal/desktop`、`internal/app`、`internal/profile` 和 `internal/proxy`。TUN 授权辅助程序保留独立入口 `cmd/miniproxy-tun`。具体边界与维护约定见 [架构说明](docs/architecture.md)。
+入口使用 `cmd/loop`，桌面界面、应用服务、配置领域和系统代理后端分别放在 `internal/desktop`、`internal/app`、`internal/profile` 和 `internal/proxy`。TUN 授权辅助程序保留独立入口 `cmd/loop-tun`。具体边界与维护约定见 [架构说明](docs/architecture.md)。
 
-推荐 `go run ./cmd/miniproxy`；根目录 `go run .` 继续兼容。可用 `make run`、`make test`、`make vet` 和 `make package` 执行日常开发操作。
+日常开发使用 `make run`、`make build`、`make test`、`make vet` 和 `make package`，这些入口会自动准备依赖。首次拉取后若直接使用 `go run ./cmd/loop`、`go test` 或 IDE，请先执行一次 `make prepare`；根目录 `go run .` 继续兼容。
+
+仓库只保存 [Fyne 补丁](third_party/fyne-patches/README.md)及上游版本/校验值。`third_party/fyne/` 是从 Go 模块缓存重建的生成目录，已加入 Git 忽略；首次准备可能下载固定版本，后续可复用缓存。构建产物、临时诊断文件、真实节点与订阅配置也不纳入版本控制。
 
 ## 配置编辑
 
 配置页使用原生 Fyne [go-fyne-pretty-view](https://github.com/ideaconnect/go-fyne-pretty-view) v2.7.0，提供 JSON 语法高亮、行号、折叠、搜索、撤销/重做与格式化，无 WebView。
+
+编辑器仅在首次进入配置页时加载，文件未变化时保留光标与撤销历史。UI 使用本地 Fyne 字体缓存补丁，避免切换页面和外观时重复保留大型字库；系统苹方、粗体、Emoji 和深浅色均保留。实现与测量记录见 [UI 内存](docs/ui-memory.md)。
 
 配置页直接编辑 `profiles/config.json`，包含本地 mixed 入口、日志、缓存、DNS、策略组、分流规则和规则库。没有配置下拉或只读运行预览。
 节点和订阅继续在“节点”页管理；TUN 和分流模式在首页管理。
@@ -33,7 +37,7 @@ macOS 窗口从创建时就不带系统标题栏，避免启动时先显示再�
 
 “保存”在通过相同校验后，将原文件备份到同目录的 `.bak`（保留最近一次），再原子替换源文件，文件与备份权限为 0600。校验失败或检测到文件已被外部修改时保留原文件。重新载入可以丢弃当前草稿、读取磁盘内容；如有草稿会先提示。
 
-连接期间允许编辑草稿，停止连接后可校验、保存；保存后下次启动生效。切换侧边栏或模式不会丢失草稿。未保存内容只保留在内存中，关闭窗口会提示；`⌘Q` 或强制结束可能直接退出，退出前请主动保存。
+连接期间允许编辑草稿，停止连接后可校验、保存；保存后下次启动生效。切换侧边栏或模式不会丢失草稿。未保存内容只保留在 UI 内存中，关闭窗口或正常退出会提示。强制结束 UI 无法保留草稿，但不会结束独立后台。
 
 使用 `-config` 调试模式时，此页直接编辑指定的完整 JSON 文件，保存前同样执行内核检查和备份；此模式绕过分离配置管理。
 
@@ -86,7 +90,7 @@ macOS 窗口从创建时就不带系统标题栏，避免启动时先显示再�
 - **开启**：启动时由 macOS 弹出管理员授权，独立 Go 辅助进程启动包内内核，创建双栈 TUN 并接管 TCP / UDP。Fyne 界面仍以普通用户身份运行；TUN 不修改 HTTP / HTTPS / SOCKS 系统代理。
 - 每次 TUN 启动、分流模式切换导致的重连，都可能再次请求授权。取消授权或启动失败会停止本次连接。
 - 已有 VPN / TUN 接管默认路由时拒绝启动，请先关闭其他 VPN，避免覆盖其路由。普通系统代理软件也建议停止，避免浏览器仍主动连接到它。
-- 正常停止、退出、界面崩溃断开控制连接时，辅助进程向内核发送退出信号。临时 DNS 随系统会话销毁，内核关闭 TUN 并释放路由。辅助进程随连接退出，没有安装常驻 root 服务。
+- 正常停止、后台退出或后台崩溃断开控制连接时，辅助进程向内核发送退出信号。UI 的退出或崩溃不会断开后台与辅助进程的控制连接。临时 DNS 随系统会话销毁，内核关闭 TUN 并释放路由。辅助进程随连接退出，没有安装常驻 root 服务。
 
 TUN 配置启用出站网卡自动检测以避免回环，DNS 请求交给同一套分流策略，并开启反向域名映射。为避免系统 DNS 已指向 TUN 时循环解析，生成配置中的 `local` DNS 临时替换为经 `direct` 出口访问的 `223.5.5.5`；保存的策略不变。自定义显式 DNS 上游保留。应用自身使用 DoH / DoT 的流量仍按普通连接处理，不会被还原成明文 DNS。
 
@@ -95,8 +99,9 @@ DNS 通过 macOS Dynamic Store 的临时独立服务接入，不覆盖 Wi-Fi / �
 开发运行 TUN 时先构建辅助程序，再显式指定（打包应用会自动查找）：
 
 ```sh
-go build -o bin/miniproxy-tun ./cmd/miniproxy-tun
-go run ./cmd/miniproxy -tun-helper "$PWD/bin/miniproxy-tun"
+go build -o bin/loop-tun ./cmd/loop-tun
+make build
+./bin/loop -tun-helper "$PWD/bin/loop-tun"
 ```
 
 `-render-config` 可导出 TUN 配置供 `sing-box check` 检查；`-check-connection` 刻意拒绝启动 TUN，整机接管需要在界面执行授权。当前只实现 macOS，尚未完成其他平台的 TUN 后端。新版本已通过三种分流模式 × 两种接管方式的内核配置检查，以及辅助进程断连清理测试；管理员授权后的实际 TUN 联网仍需在关闭其他 VPN 的环境下验证。
@@ -142,6 +147,49 @@ profiles/
 
 也可直接在配置页编辑同一内容；停止连接后保存，下次启动生效。策略使用 sing-box JSON，当前没有 Loon 文本规则转换器。
 
+## 从 MiniProxy 升级
+
+应用现名为 **Loop**，应用包为 `Loop.app`，入口命令为 `loop`、`loopd`、`loopctl` 和 `loop-tun`；Go 模块名为 `local/loop`。默认数据目录为 `~/Library/Application Support/loop/`。
+
+打包应用首次使用默认配置时，会从旧 `MiniProxy` 数据目录复制节点、订阅、主配置、规则库、模式、策略选择和菜单栏偏好；旧文件保留。已有 Loop 配置不会被覆盖，自定义 `--profiles` / `--state-dir` 目录不自动导入旧数据。旧后台的运行配置、代理恢复记录、锁和日志不迁移，避免把旧进程的网络状态带到新后台。原有主题和界面偏好也会迁移到新应用 ID。
+
+请先通过旧版菜单栏退出 MiniProxy，再打开 Loop。登录自启绑定 macOS 应用标识，改名后请在 Loop 的“更多 → 开机自启”重新开启，并关闭旧版的登录项。
+
+## 独立后台与命令行
+
+现在 UI 与后台是两个独立进程。点击 `×` 会销毁 UI 进程并释放其界面资源；后台、代理连接和 macOS 菜单栏继续运行。菜单栏“显示主窗口”会重新启动 UI 并附加到当前连接；不会重启代理。`⌘Q` 或菜单栏“退出 Loop”停止整个应用。
+
+`loopd` 和 `loopctl` 都不依赖 Fyne。后台仅监听当前用户私有的 Unix Socket，无 TCP 端口；CLI 的 `--json` 返回 `ok / error / status / result`，失败退出码非零，适合脚本和 AI 直接调用。状态包含策略组、节点的稳定 key 和连接状态，不包含节点凭据或订阅链接。
+
+```sh
+make build
+# 仅启动后台，不打开 UI，也不会自动连接
+./bin/loopctl daemon start
+./bin/loopctl status --json
+./bin/loopctl connect --json
+./bin/loopctl mode rule --json  # direct / rule / global
+./bin/loopctl policy list --json
+# 从 policy list 的 members[].key 取得节点键或子策略名称
+./bin/loopctl policy select Available '<节点 key>' --json
+./bin/loopctl disconnect --json
+./bin/loopctl ui                # 打开或激活 UI
+./bin/loopctl daemon stop --json
+```
+
+打包后使用应用内自带的 CLI：
+
+```sh
+"/Applications/Loop.app/Contents/MacOS/loopctl" status --json
+```
+
+AI 可直接执行这些命令，无需打开窗口或另建 MCP 服务。策略名、节点 key 中有空格时使用 shell 引号；应读取状态中的 `busy` 和命令错误，等待正在执行的操作完成后再重试。
+
+纯命令行环境可使用 `daemon start --no-tray`，不创建菜单栏；此参数只影响新启动的后台。也可在前台直接运行 `./bin/loopd --no-tray --profiles /绝对路径/profiles --state-dir /绝对路径/state`，日志写到终端，SIGINT / SIGTERM 停止并恢复代理。
+
+`--state-dir` 用于隔离后台及日志；独立实例同时指定独立的 `--profiles`，并避免端口或系统代理/TUN 接管冲突。所有控制命令使用相同状态目录。UI 默认启动后台和菜单栏；首次运行迁移原菜单栏偏好到状态目录 `desktop.json`。后台重启后旧 UI 会拒绝继续控制，关闭重开即可附加新实例。
+
+CLI `daemon stop` 直接停止后台，已打开的 UI 会保留草稿并显示后台不可用；关闭重开会确保后台重新启动。登录自启仍打开主应用，再启动后台，不会自动连接代理。
+
 ## 开发运行
 
 需要 Go、Xcode Command Line Tools、sing-box 1.14.4+。
@@ -152,10 +200,10 @@ brew install sing-box
 # cp profiles/nodes.example.json profiles/nodes.json
 # cp profiles/subscriptions.example.json profiles/subscriptions.json
 # cp profiles/selection.example.json profiles/selection.json
-go run ./cmd/miniproxy
+make run
 ```
 
-本地已经迁移了提供的 Megabox 节点。原来的 `config.json` 保留作为备份；默认启动使用 `profiles/config.json` 主配置，并独立管理节点与订阅。`go run ./cmd/miniproxy -config config.json` 是绕过独立分流的完整配置调试模式。
+本地已经迁移了提供的 Megabox 节点。原来的 `config.json` 保留作为备份；默认启动使用 `profiles/config.json` 主配置，并独立管理节点与订阅。`go run ./cmd/loop -config config.json` 是绕过独立分流的完整配置调试模式。
 
 ### 管理节点
 
@@ -166,11 +214,11 @@ go run ./cmd/miniproxy
 切换连接节点可使用命令行：
 
 ```sh
-go run ./cmd/miniproxy -list-nodes
-go run ./cmd/miniproxy -select-source manual -select-node megabox-40
+go run ./cmd/loop -list-nodes
+go run ./cmd/loop -select-source manual -select-node megabox-40
 ```
 
-只修改 `selection.json`。若当前已连接，需要停止再启动；不会在现有连接中即时切换。
+旧的 `-select-source / -select-node` 参数只允许后台未运行时使用。在线选择请使用下方的 `policy select`，后台会自动重连并在失败时恢复原选择。
 
 ### 导入、更新与切换订阅
 
@@ -183,10 +231,10 @@ go run ./cmd/miniproxy -select-source manual -select-node megabox-40
 命令行仍接受**本地 sing-box JSON 导出文件**，从 `outbounds` 提取节点，以原始 `tag` 作为 ID：
 
 ```sh
-go run ./cmd/miniproxy -import-subscription /path/to/provider.json \
+go run ./cmd/loop -import-subscription /path/to/provider.json \
   -subscription-id airport-a -subscription-name '机场 A'
-go run ./cmd/miniproxy -list-nodes
-go run ./cmd/miniproxy -select-source airport-a -select-node '香港 01'
+go run ./cmd/loop -list-nodes
+go run ./cmd/loop -select-source airport-a -select-node '香港 01'
 ```
 
 界面右键订阅选择“更新订阅”或命令行用同一个 `subscription-id` 再次导入，即更新其节点快照；自己的规则、DNS、手动节点和当前选择都保留。如果新订阅删除了当前所选节点，更新会被拒绝并保留旧快照。此时先切到手动节点或其他来源，再更新和重新选择。
@@ -194,21 +242,21 @@ go run ./cmd/miniproxy -select-source airport-a -select-node '香港 01'
 ### 配置位置
 
 - 开发运行默认使用工作目录下的 `profiles/`。
-- `.app` 首次运行将内置配置复制到 `~/Library/Application Support/MiniProxy/profiles/`，以后使用这份可编辑副本。重新打包或升级应用只补齐缺失文件，不覆盖自己的规则和节点。不要直接修改签名应用包内部。
+- `.app` 首次运行将内置配置复制到 `~/Library/Application Support/loop/profiles/`，以后使用这份可编辑副本。重新打包或升级应用只补齐缺失文件，不覆盖自己的规则和节点。不要直接修改签名应用包内部。
 - `-profiles /绝对路径` 可以指定另一套独立配置目录。
-- 命令行修改已安装应用的配置，可运行 `dist/MiniProxy.app/Contents/MacOS/MiniProxy -list-nodes` 等；或者给 `go run ./cmd/miniproxy` 加 `-profiles "$HOME/Library/Application Support/MiniProxy/profiles"`。
-- 内核日志：`~/Library/Application Support/MiniProxy/sing-box.log`。
-- 运行配置：`~/Library/Application Support/MiniProxy/runtime/config.json`，权限 0600。
+- 命令行修改已安装应用的配置，可运行 `dist/Loop.app/Contents/MacOS/loopctl -list-nodes` 等；或者给 `go run ./cmd/loop` 加 `-profiles "$HOME/Library/Application Support/loop/profiles"`。
+- 内核日志：`~/Library/Application Support/loop/sing-box.log`。
+- 运行配置：`~/Library/Application Support/loop/runtime/config.json`，权限 0600。
 
 ### 验证
 
 ```sh
 go test -race ./...
 go vet ./...
-go run ./cmd/miniproxy -check-connection
+go run ./cmd/loop -check-connection
 # 如需检查或手工运行生成配置，请写入自己的临时路径：
-go run ./cmd/miniproxy -render-config /tmp/miniproxy-config.json
-sing-box check -c /tmp/miniproxy-config.json
+go run ./cmd/loop -render-config /tmp/loop-config.json
+sing-box check -c /tmp/loop-config.json
 ```
 
 节点连接检查不会修改系统代理。测试覆盖切换节点/订阅后的规则与 DNS 不变、订阅刷新不会注入策略、选中节点丢失时拒绝更新、应用升级保留自定义配置，以及系统代理恢复。
@@ -217,7 +265,7 @@ sing-box check -c /tmp/miniproxy-config.json
 
 ```sh
 bash scripts/package-macos.sh
-open dist/MiniProxy.app
+open dist/Loop.app
 ```
 
 生成自带内核、主配置、节点订阅数据和规则库的 `.app`、本机 CPU 架构的 ZIP，用户无需安装 Go、Homebrew 或 sing-box。当前是同架构 macOS 15+ 的本地 ad-hoc 签名构建，不是 universal 包。
@@ -230,7 +278,7 @@ open dist/MiniProxy.app
 - 验证独立运行时退出 Karing/Loon 等 VPN，避免代理叠加。
 - 连接期间切换物理网络后，需要停止再启动。
 - 不修改 PAC、自动发现、认证代理；检测到这些配置时提示先处理。系统代理已有绕过列表保留，匹配地址可能不经过 sing-box。
-- 系统代理模式强制退出/断电可能留下系统代理；下一次启动连接会先根据 `proxy-state.json` 恢复，也可在系统设置手动关闭。系统代理模式强制退出还可能留下内核子进程，需要结束它再重试。TUN 模式能处理界面崩溃；同时强制终止授权辅助进程和内核、系统异常等情况尚不保证自动清理，不应与正常停止等同。
+- 系统代理模式强制结束后台/断电可能留下系统代理；下一次启动连接会先根据 `proxy-state.json` 恢复，也可在系统设置手动关闭。系统代理模式强制结束后台还可能留下内核子进程，需要结束它再重试。TUN 模式能处理后台控制连接断开；同时强制终止授权辅助进程和内核、系统异常等情况尚不保证自动清理，不应与正常停止等同。
 
 ## Android
 

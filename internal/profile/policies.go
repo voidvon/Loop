@@ -23,14 +23,16 @@ type PolicyGroup struct {
 	Groups   []string `json:"groups,omitempty"`
 }
 type PolicyMember struct {
-	Key, Name, Detail string
-	IsGroup           bool
+	Key     string `json:"key"`
+	Name    string `json:"name"`
+	Detail  string `json:"detail,omitempty"`
+	IsGroup bool   `json:"is_group,omitempty"`
 }
 type PolicyState struct {
-	Group    PolicyGroup
-	Members  []PolicyMember
-	Selected string
-	Error    string
+	Group    PolicyGroup    `json:"group"`
+	Members  []PolicyMember `json:"members"`
+	Selected string         `json:"selected"`
+	Error    string         `json:"error,omitempty"`
 }
 
 func DefaultPolicyGroups() []PolicyGroup {

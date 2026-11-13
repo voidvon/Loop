@@ -11,9 +11,9 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"local/miniproxy/internal/app"
-	"local/miniproxy/internal/profile"
-	"local/miniproxy/internal/proxy"
+	"local/loop/internal/app"
+	"local/loop/internal/profile"
+	"local/loop/internal/proxy"
 )
 
 const (
@@ -131,7 +131,7 @@ func newDesktopShell(window fyne.Window, service *app.Service, manager *nodeMana
 
 	shell.documents = newDocumentController(window, service)
 	shell.configPane = newConfigPane(window, shell.documents)
-	shell.refreshers[pageConfig] = shell.configPane.Refresh
+	shell.refreshers[pageConfig] = shell.configPane.Open
 	configPage := shell.configPane.root
 	shell.rulesPane = newRulesPane(window, shell.documents)
 	if rawConfig == "" {
@@ -172,7 +172,7 @@ func newDesktopShell(window fyne.Window, service *app.Service, manager *nodeMana
 	brand := sidebarBrand(shell.connectionLabel)
 	top := container.NewVBox(brand, inset(32, 0, 0, 0, navigation))
 	shell.appearance = container.NewVBox()
-	footer := container.NewVBox(shell.captureLabel, shell.appearance, quietLabel("MiniProxy  /  0.15.9"))
+	footer := container.NewVBox(shell.captureLabel, shell.appearance, quietLabel(app.DisplayName+"  /  0.16.4"))
 	shell.sidebarPadding = inset(26, 20, 16, 16, container.NewBorder(top, footer, nil, nil, layout.NewSpacer()))
 	sidebar := container.NewStack(themedSurface(colorSidebar, 0), shell.sidebarPadding)
 	shell.sidebar = sidebar
