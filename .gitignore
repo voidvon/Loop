@@ -1,0 +1,13 @@
+/config.json
+/profiles/nodes.json
+/profiles/subscriptions.json
+/profiles/selection.json
+/bin/
+/dist/
+*.log
+.DS_Store
+
+/profiles/settings.json
+
+/profiles/policy-selections.json
+/profiles/*.bak

@@ -1,0 +1,21 @@
+{
+  "nodes": [
+    {
+      "id": "my-node",
+      "name": "我的节点",
+      "outbound": {
+        "type": "vless",
+        "server": "YOUR_SERVER_IP",
+        "server_port": 443,
+        "uuid": "YOUR_UUID",
+        "flow": "xtls-rprx-vision",
+        "tls": {
+          "enabled": true,
+          "server_name": "YOUR_SNI",
+          "utls": { "enabled": true, "fingerprint": "chrome" },
+          "reality": { "enabled": true, "public_key": "YOUR_PUBLIC_KEY", "short_id": "YOUR_SHORT_ID" }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "dns": {
+    "servers": [
+      { "type": "local", "tag": "dns-direct" },
+      { "type": "https", "tag": "dns-proxy", "server": "1.1.1.1", "detour": "proxy" }
+    ],
+    "rules": [
+      { "domain_suffix": ["cn", "lan", "local", "localhost"], "action": "route", "server": "dns-direct" },
+      { "rule_set": "geosite-cn", "action": "route", "server": "dns-direct" }
+    ],
+    "final": "dns-proxy",
+    "strategy": "prefer_ipv4"
+  },
+  "http_clients": [
+    { "tag": "rule-download", "detour": "proxy" }
+  ],
+  "route": {
+    "default_domain_resolver": "dns-direct",
+    "rules": [
+      { "ip_is_private": true, "action": "route", "outbound": "direct" },
+      { "domain_suffix": ["cn", "lan", "local", "localhost"], "action": "route", "outbound": "direct" },
+      { "rule_set": "geosite-cn", "action": "route", "outbound": "direct" },
+      { "action": "resolve" },
+      { "ip_is_private": true, "action": "route", "outbound": "direct" },
+      { "rule_set": "geoip-cn", "action": "route", "outbound": "direct" }
+    ],
+    "rule_set": [
+      {
+        "type": "remote",
+        "tag": "geosite-cn",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/cn.srs",
+        "initial_path": "rule-sets/geosite-cn.srs",
+        "http_client": "rule-download",
+        "update_interval": "1d"
+      },
+      {
+        "type": "remote",
+        "tag": "geoip-cn",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/cn.srs",
+        "initial_path": "rule-sets/geoip-cn.srs",
+        "http_client": "rule-download",
+        "update_interval": "1d"
+      }
+    ],
+    "final": "proxy"
+  }
+}

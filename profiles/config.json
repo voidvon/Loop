@@ -1,0 +1,222 @@
+{
+  "dns": {
+    "final": "dns-proxy",
+    "rules": [
+      {
+        "action": "route",
+        "domain_suffix": [
+          "cn",
+          "lan",
+          "local",
+          "localhost"
+        ],
+        "server": "dns-direct"
+      },
+      {
+        "action": "route",
+        "rule_set": "geosite-cn",
+        "server": "dns-direct"
+      }
+    ],
+    "servers": [
+      {
+        "tag": "dns-direct",
+        "type": "local"
+      },
+      {
+        "detour": "Available",
+        "server": "1.1.1.1",
+        "tag": "dns-proxy",
+        "type": "https"
+      }
+    ],
+    "strategy": "prefer_ipv4"
+  },
+  "experimental": {
+    "cache_file": {
+      "enabled": true
+    }
+  },
+  "http_clients": [
+    {
+      "detour": "Available",
+      "tag": "rule-download"
+    }
+  ],
+  "inbounds": [
+    {
+      "listen": "127.0.0.1",
+      "listen_port": 2080,
+      "tag": "mixed-in",
+      "type": "mixed"
+    }
+  ],
+  "log": {
+    "level": "info",
+    "timestamp": true
+  },
+  "policy_groups": [
+    {
+      "name": "Available",
+      "all_nodes": true
+    },
+    {
+      "name": "YouTube",
+      "all_nodes": true,
+      "groups": [
+        "Available",
+        "HK",
+        "TW",
+        "SG",
+        "JP",
+        "KR",
+        "US"
+      ]
+    },
+    {
+      "name": "Telegram",
+      "all_nodes": true,
+      "groups": [
+        "Available",
+        "HK",
+        "TW",
+        "SG",
+        "JP",
+        "KR",
+        "US"
+      ]
+    },
+    {
+      "name": "HK",
+      "all_nodes": true,
+      "filter": "(?i)香港|hong.?kong|\\bHK\\b|🇭🇰"
+    },
+    {
+      "name": "TW",
+      "all_nodes": true,
+      "filter": "(?i)台湾|台灣|taiwan|\\bTW\\b|🇹🇼"
+    },
+    {
+      "name": "SG",
+      "all_nodes": true,
+      "filter": "(?i)新加坡|狮城|singapore|\\bSG\\b|🇸🇬"
+    },
+    {
+      "name": "JP",
+      "all_nodes": true,
+      "filter": "(?i)日本|东京|大阪|japan|\\bJP\\b|🇯🇵"
+    },
+    {
+      "name": "KR",
+      "all_nodes": true,
+      "filter": "(?i)韩国|韓國|首尔|korea|\\bKR\\b|🇰🇷"
+    },
+    {
+      "name": "US",
+      "all_nodes": true,
+      "filter": "(?i)美国|美國|united.?states|\\bUSA?\\b|🇺🇸"
+    }
+  ],
+  "route": {
+    "default_domain_resolver": "dns-direct",
+    "final": "Available",
+    "rule_set": [
+      {
+        "format": "binary",
+        "http_client": "rule-download",
+        "initial_path": "rule-sets/geosite-cn.srs",
+        "tag": "geosite-cn",
+        "type": "remote",
+        "update_interval": "1d",
+        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/cn.srs"
+      },
+      {
+        "format": "binary",
+        "http_client": "rule-download",
+        "initial_path": "rule-sets/geoip-cn.srs",
+        "tag": "geoip-cn",
+        "type": "remote",
+        "update_interval": "1d",
+        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/cn.srs"
+      }
+    ],
+    "rules": [
+      {
+        "action": "route",
+        "ip_is_private": true,
+        "outbound": "direct"
+      },
+      {
+        "action": "route",
+        "domain_suffix": [
+          "cn",
+          "lan",
+          "local",
+          "localhost"
+        ],
+        "outbound": "direct"
+      },
+      {
+        "action": "route",
+        "outbound": "direct",
+        "rule_set": "geosite-cn"
+      },
+      {
+        "action": "resolve"
+      },
+      {
+        "action": "route",
+        "ip_is_private": true,
+        "outbound": "direct"
+      },
+      {
+        "action": "route",
+        "outbound": "direct",
+        "rule_set": "geoip-cn"
+      },
+      {
+        "action": "route",
+        "domain_suffix": [
+          "youtube.com",
+          "youtu.be",
+          "googlevideo.com",
+          "ytimg.com",
+          "youtubei.googleapis.com",
+          "youtube-nocookie.com"
+        ],
+        "outbound": "YouTube"
+      },
+      {
+        "action": "route",
+        "domain_suffix": [
+          "telegram.org",
+          "t.me",
+          "telegram.me",
+          "tdesktop.com",
+          "telegra.ph"
+        ],
+        "outbound": "Telegram"
+      },
+      {
+        "action": "route",
+        "ip_cidr": [
+          "91.108.56.0/22",
+          "91.108.4.0/22",
+          "91.108.8.0/22",
+          "91.108.16.0/22",
+          "91.108.12.0/22",
+          "149.154.160.0/20",
+          "91.105.192.0/23",
+          "91.108.20.0/22",
+          "185.76.151.0/24",
+          "2001:b28:f23d::/48",
+          "2001:b28:f23f::/48",
+          "2001:67c:4e8::/48",
+          "2001:b28:f23c::/48",
+          "2a0a:f280::/32"
+        ],
+        "outbound": "Telegram"
+      }
+    ]
+  }
+}
