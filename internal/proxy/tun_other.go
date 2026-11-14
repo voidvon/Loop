@@ -12,7 +12,7 @@ import (
 type tunSession struct{}
 
 func TUNAvailable() bool { return false }
-func prepareTUN(string) (*tunSession, *exec.Cmd, error) {
+func prepareTUN(string, string) (*tunSession, *exec.Cmd, error) {
 	return nil, nil, errors.New("当前仅支持 macOS TUN")
 }
 func (*tunSession) connect(context.Context, <-chan struct{}, string, []byte, io.Writer) error {

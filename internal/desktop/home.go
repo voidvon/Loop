@@ -33,13 +33,13 @@ func (s *desktopShell) homePage(status *widget.Label, toggle *widget.Button, cur
 		container.NewBorder(nil, nil, quietLabel("默认策略"),
 			container.NewGridWrap(fyne.NewSize(42, 42), iconTile(theme.ComputerIcon(), colorAccent)), nil),
 		current,
-		quietLabel("全局代理与默认分流使用 Available，应用策略可单独选择。"),
+		quietLabel("全局代理使用此默认策略，分流规则可分别指定策略。"),
 		inset(12, 0, 0, 0, container.NewHBox(manage)),
 	))
 	capture := sectionCard("流量接管", "选择流量进入代理的方式", container.NewVBox(
 		s.tunSwitch,
 		quietLabel("关闭时使用系统代理"),
-		quietLabel("TUN 接管 TCP / UDP，启动时需要管理员授权。请停止连接后切换。"),
+		quietLabel("TUN 接管 TCP / UDP；首次安装服务需授权，后续连接与配置重连免重复授权。"),
 	))
 	viewPolicy := widget.NewButtonWithIcon("查看策略", theme.NavigateNextIcon(), func() { s.selectPage(pagePolicy) })
 	viewPolicy.IconPlacement = widget.ButtonIconTrailingText

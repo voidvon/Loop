@@ -17,7 +17,7 @@ import (
 
 var basicRuleKinds = []string{"domain", "domain_suffix", "domain_keyword", "ip_cidr", "ip_is_private"}
 var basicRuleLabels = []string{"完整域名", "域名后缀", "域名关键词", "IP / CIDR", "私有 IP"}
-var ruleTargetLabels = []string{"直连", "策略 · Available", "拦截"}
+var ruleTargetLabels = []string{"直连", "默认策略（旧版 proxy）", "拦截"}
 var ruleTargets = []string{"direct", "proxy", "reject"}
 
 func basicRuleLabel(kind string) string {
@@ -60,25 +60,26 @@ func ruleTargetLabel(target string) string {
 }
 
 type rulesPane struct {
-	root                                                fyne.CanvasObject
-	window                                              fyne.Window
-	controller                                          *documentController
-	groups                                              *widget.List
-	list                                                *widget.GridWrap
-	cardWidth                                           float32
-	summary, status, sectionTitle, sectionDetail, empty *widget.Label
-	final                                               *widget.Select
-	add, reload, saveFinal                              *widget.Button
-	body                                                *fyne.Container
-	finalPage, localPage                                fyne.CanvasObject
-	baseline                                            []byte
-	routing                                             profile.RoutingRules
-	filtered, remoteSets                                []int
-	selected, section                                   int
-	available                                           bool
-	loadError                                           error
-	targets, targetLabels                               []string
-	contextMenu                                         *widget.PopUpMenu
+	root                   fyne.CanvasObject
+	window                 fyne.Window
+	controller             *documentController
+	groups                 *widget.List
+	list                   *widget.GridWrap
+	cardWidth              float32
+	summary, status, empty *widget.Label
+	sectionHeader          *infoRow
+	final                  *widget.Select
+	add, reload, saveFinal *widget.Button
+	body                   *fyne.Container
+	finalPage, localPage   fyne.CanvasObject
+	baseline               []byte
+	routing                profile.RoutingRules
+	filtered, remoteSets   []int
+	selected, section      int
+	available              bool
+	loadError              error
+	targets, targetLabels  []string
+	contextMenu            *widget.PopUpMenu
 }
 
 func newRulesPane(window fyne.Window, controller *documentController) *rulesPane {
@@ -250,7 +251,7 @@ func (p *rulesPane) editRule(index int) {
 	if !p.writable() {
 		return
 	}
-	basic := profile.BasicRule{Kind: "domain_suffix", Target: profile.DefaultPolicy}
+	basic := profile.BasicRule{Kind: "domain_suffix", Target: p.defaultTarget()}
 	if index >= 0 {
 		if index >= len(p.routing.Rules) {
 			return
@@ -352,4 +353,14 @@ func (p *rulesPane) targetValue(label string) string {
 		}
 	}
 	return ""
+}
+
+func (p *rulesPane) defaultTarget() string {
+	config, err := profile.ParseDocument(p.baseline)
+	if err == nil {
+		if name, err := profile.DefaultPolicyName(config); err == nil && name != "" {
+			return name
+		}
+	}
+	return "direct"
 }

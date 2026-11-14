@@ -15,7 +15,7 @@ func policyDestination(value any) string {
 	case "direct":
 		return "直连"
 	case "proxy":
-		return "Available 默认策略"
+		return "默认策略"
 	case nil, "":
 		return "未指定"
 	default:

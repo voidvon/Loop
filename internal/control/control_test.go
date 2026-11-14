@@ -155,8 +155,11 @@ func TestDetachedClientAndMultipleFrontends(t *testing.T) {
 	if c.Snapshot().Mode != profile.ModeDirect || !backend.Running() {
 		t.Fatal("mode transition lost connection")
 	}
-	if _, err := second.Execute(context.Background(), app.Operation{Action: "set_tun", Enabled: boolValue(true)}); err == nil {
-		t.Fatal("live TUN mutation accepted")
+	if _, err := second.Execute(context.Background(), app.Operation{Action: "set_tun", Enabled: boolValue(true)}); err != nil {
+		t.Fatal("live TUN switch failed", err)
+	}
+	if !c.Snapshot().TUN || !c.Snapshot().Running {
+		t.Fatal("TUN transition lost connection or setting")
 	}
 	if _, err := second.Execute(context.Background(), app.Operation{Action: "connect", Enabled: boolValue(false)}); err != nil {
 		t.Fatal(err)

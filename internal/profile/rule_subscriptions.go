@@ -190,8 +190,15 @@ func changeRuleSubscription(config, route map[string]any, current RoutingRules, 
 		rules = append(rules, nil)
 		copy(rules[position+1:], rules[position:])
 		rules[position] = rule
-		// Explicit download routing uses the user's stable default strategy.
-		set := map[string]any{"type": "remote", "tag": sub.Tag, "url": sub.URL, "format": sub.Format, "update_interval": sub.UpdateInterval, "http_client": map[string]any{"detour": DefaultPolicy}}
+		// Explicit download routing follows the configured default strategy.
+		defaultPolicy, err := DefaultPolicyName(config)
+		if err != nil {
+			return err
+		}
+		if defaultPolicy == "" {
+			return errors.New("请先在策略页设置默认策略，再添加订阅规则")
+		}
+		set := map[string]any{"type": "remote", "tag": sub.Tag, "url": sub.URL, "format": sub.Format, "update_interval": sub.UpdateInterval, "http_client": map[string]any{"detour": defaultPolicy}}
 		sets = append(sets, set)
 	} else {
 		set := sets[index]

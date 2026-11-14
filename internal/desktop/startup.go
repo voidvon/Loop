@@ -43,11 +43,7 @@ func newStartupPane() *startupPane {
 		}
 	})
 	p.settings.Hide()
-	detail := quietLabel("进入 macOS 后自动打开主应用")
-	detail.Wrapping = fyne.TextWrapOff
-	row := container.NewBorder(nil, nil, nil, container.NewCenter(p.toggle), container.NewVBox(
-		sectionTitle("登录时启动 Loop"), detail,
-	))
+	row := newSectionHeader("登录时启动 Loop", "进入 macOS 后自动打开主应用", nil, p.toggle)
 	p.feedback = container.NewVBox(p.message, container.NewHBox(p.settings))
 	card := panel(inset(12, 12, 12, 12, container.NewVBox(
 		row, p.feedback,

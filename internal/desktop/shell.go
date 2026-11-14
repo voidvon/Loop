@@ -172,7 +172,7 @@ func newDesktopShell(window fyne.Window, service *app.Service, manager *nodeMana
 	brand := sidebarBrand(shell.connectionLabel)
 	top := container.NewVBox(brand, inset(32, 0, 0, 0, navigation))
 	shell.appearance = container.NewVBox()
-	footer := container.NewVBox(shell.captureLabel, shell.appearance, quietLabel(app.DisplayName+"  /  0.16.4"))
+	footer := container.NewVBox(shell.captureLabel, shell.appearance, quietLabel(app.DisplayName+"  /  0.16.14"))
 	shell.sidebarPadding = inset(26, 20, 16, 16, container.NewBorder(top, footer, nil, nil, layout.NewSpacer()))
 	sidebar := container.NewStack(themedSurface(colorSidebar, 0), shell.sidebarPadding)
 	shell.sidebar = sidebar
@@ -260,6 +260,10 @@ func (s *desktopShell) SyncMode() {
 
 func (s *desktopShell) SetModeEnabled(enabled bool) {
 	defer s.notifyStateChanged()
+	if s.more != nil {
+		s.more.routing.SetAvailable(enabled)
+		s.more.benchmark.SetAvailable(enabled)
+	}
 	if s.strategies != nil {
 		s.strategies.available = enabled
 		s.strategies.updateButtons()
@@ -275,7 +279,7 @@ func (s *desktopShell) SetModeEnabled(enabled bool) {
 		s.strategies.updateButtons()
 	}
 	setEnabled(s.modeSelect, enabled && !s.rawConfig)
-	setEnabled(s.tunSwitch, enabled && !s.rawConfig && !s.running() && proxy.TUNAvailable())
+	setEnabled(s.tunSwitch, enabled && !s.rawConfig && proxy.TUNAvailable())
 }
 
 func (s *desktopShell) notifyStateChanged() {

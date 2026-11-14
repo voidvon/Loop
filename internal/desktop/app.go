@@ -71,7 +71,7 @@ func Run(options application.Options) error {
 	w.Resize(fyne.NewSize(1120, 760))
 	w.CenterOnScreen()
 	var stopped atomic.Bool
-	closing, localBusy, nodeBusy, documentBusy, online := false, false, false, false, true
+	closing, localBusy, nodeBusy, documentBusy, routingBusy, benchmarkBusy, online := false, false, false, false, false, false, true
 	var shell *desktopShell
 	var manager *nodeManager
 	var requestExit func()
@@ -115,7 +115,7 @@ func Run(options application.Options) error {
 		}
 	}
 	busy := func() bool {
-		return localBusy || nodeBusy || documentBusy || snapshot.Busy || snapshot.Closing || closing || !online
+		return localBusy || nodeBusy || documentBusy || routingBusy || benchmarkBusy || snapshot.Busy || snapshot.Closing || closing || !online
 	}
 	render := func() {
 		locked := busy()
@@ -156,6 +156,7 @@ func Run(options application.Options) error {
 		snapshot, online = state, true
 		if shell != nil {
 			shell.more.SetPreferences(state.Tray)
+			shell.more.benchmark.ApplyProgress(state.Benchmark)
 			if changed && !state.Busy {
 				if manager != nil {
 					manager.refresh()
@@ -202,6 +203,14 @@ func Run(options application.Options) error {
 	}, func(enabled bool) { execute(application.Operation{Action: "set_tun", Enabled: &enabled}) })
 	shell.more.startup.attach(autostart.Service{})
 	defer shell.more.startup.Close()
+	shell.more.routing.runTest = service.TestRouting
+	shell.more.routing.OnBusy = func(value bool) { routingBusy = value; render() }
+	defer shell.more.routing.Close()
+	shell.more.benchmark.window = w
+	shell.more.benchmark.loadNodes = service.BenchmarkNodes
+	shell.more.benchmark.run = service.RunBenchmark
+	shell.more.benchmark.OnBusy = func(value bool) { benchmarkBusy = value; render() }
+	defer shell.more.benchmark.Close()
 	a.Lifecycle().SetOnEnteredForeground(func() {
 		if !stopped.Load() {
 			fyne.Do(func() {
@@ -219,7 +228,10 @@ func Run(options application.Options) error {
 	shell.documents.SaveRules = func(workCtx context.Context, data, expected []byte, _ bool) (application.RuleSaveResult, error) {
 		return service.SaveRules(workCtx, nil, data, expected, false)
 	}
-	shell.documents.OnRulesApplied = func(result application.RuleSaveResult) { snapshot.Running = result.Running; render() }
+	shell.documents.SavePolicies = func(workCtx context.Context, data, expected []byte, _ bool) (application.DocumentSaveResult, error) {
+		return service.SavePolicies(workCtx, nil, data, expected, false)
+	}
+	shell.documents.OnApplied = func(result application.RuleSaveResult) { snapshot.Running = result.Running; render() }
 	shell.documents.OnBusy = func(value bool) { documentBusy = value; render() }
 	if shell.strategies != nil {
 		shell.strategies.OnSelect = func(group, key string) {
@@ -257,6 +269,8 @@ func Run(options application.Options) error {
 			manager.Close()
 		}
 		shell.more.startup.Close()
+		shell.more.routing.Close()
+		shell.more.benchmark.Close()
 		if shell.strategies != nil {
 			shell.strategies.Close()
 		}

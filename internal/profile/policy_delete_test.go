@@ -97,7 +97,8 @@ func TestRemovePolicyReportsRoutingAndSelectionDependencies(t *testing.T) {
 				config["policy_groups"] = append(DefaultPolicyGroups(), PolicyGroup{Name: "Work", Groups: []string{"US"}})
 				want = "Work 选中"
 			case "Available":
-				name, want = DefaultPolicy, "不能删除默认策略"
+				name, want = DefaultPolicy, "YouTube、Telegram 选中"
+				config["route"].(map[string]any)["final"] = "direct"
 			case "missing":
 				name, want = "missing", "已不存在"
 			}

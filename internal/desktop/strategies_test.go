@@ -2,6 +2,7 @@ package desktop
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -106,23 +107,26 @@ func TestStrategyPageOwnsNodeSelectionAndPreservesDraft(t *testing.T) {
 	if calls != 0 {
 		t.Fatal("browsing groups changed traffic")
 	}
-	p.members.Select(len(p.state().Members) - 1)
+	p.members.Select(strategyMemberIndex(t, p, profile.NodeKey("manual", "a")))
 	choice, _ := s.StrategyChoice("YouTube")
 	if calls != 1 || choice != profile.NodeKey("manual", "a") {
 		t.Fatal("member tap did not select a strategy", choice, calls)
 	}
-	// Online selection remains enabled; editing definitions is stopped-only.
+	// Live policy saves enable editing and creation while connected.
 	running = true
+	shell.documents.SavePolicies = func(ctx context.Context, data, expected []byte, connected bool) (app.DocumentSaveResult, error) {
+		return service.SavePolicies(ctx, nil, data, expected, false)
+	}
 	shell.SetModeEnabled(true)
-	if p.edit.Disabled() == false || !p.canSelect() {
+	if p.edit.Disabled() || p.add.Disabled() || !p.canSelect() {
 		t.Fatal("wrong connected controls")
 	}
-	p.members.Select(0)
+	p.members.Select(strategyMemberIndex(t, p, profile.DefaultPolicy))
 	if calls != 2 {
 		t.Fatal("online choice wasn't requested")
 	}
 	shell.SetModeEnabled(false)
-	p.members.Select(len(p.state().Members) - 1)
+	p.members.Select(strategyMemberIndex(t, p, profile.NodeKey("manual", "a")))
 	if calls != 2 {
 		t.Fatal("locked callback changed selection")
 	}
@@ -136,7 +140,7 @@ func TestStrategyPageOwnsNodeSelectionAndPreservesDraft(t *testing.T) {
 	if !shell.documents.dirty() {
 		t.Fatal("missing editor draft")
 	}
-	p.members.Select(len(p.state().Members) - 1)
+	p.members.Select(strategyMemberIndex(t, p, profile.NodeKey("manual", "a")))
 	if calls != 2 {
 		t.Fatal("strategy selection ignored unsaved draft")
 	}
@@ -151,4 +155,15 @@ func TestStrategyPageOwnsNodeSelectionAndPreservesDraft(t *testing.T) {
 	if !strings.Contains(shell.currentPolicy.Text, "Available") {
 		t.Fatal("home doesn't show default strategy")
 	}
+}
+
+func strategyMemberIndex(t *testing.T, p *strategyPane, key string) int {
+	t.Helper()
+	for i, row := range p.rows {
+		if row.member.Key == key {
+			return i
+		}
+	}
+	t.Fatalf("missing member %s", key)
+	return -1
 }

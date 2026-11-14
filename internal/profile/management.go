@@ -64,16 +64,13 @@ func (s Store) SaveSubscription(value Subscription) error {
 			return err
 		}
 	}
-	selection, err := s.Selection()
+	states, err := s.PolicyStates()
 	if err != nil {
 		return err
 	}
-	if selection.Source == value.ID && !ids[selection.Node] {
-		return errors.New("更新后的订阅不含当前节点，请先选择其他来源再更新；原订阅未修改")
-	}
-	choices, err := s.policyChoices()
-	if err != nil {
-		return err
+	choices := map[string]string{}
+	for _, state := range states {
+		choices[state.Group.Name] = state.Selected
 	}
 	sources, err := s.Sources()
 	if err != nil {

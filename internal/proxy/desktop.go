@@ -143,7 +143,7 @@ func (d *Desktop) Start(ctx context.Context) error {
 	}
 	cmd := exec.Command(d.CorePath, "run", "-c", configPath, "-D", d.StateDir)
 	if HasTUN(config) {
-		d.tun, cmd, err = prepareTUN(d.HelperPath)
+		d.tun, cmd, err = prepareTUN(d.HelperPath, d.CorePath)
 		if err != nil {
 			d.logFile.Close()
 			d.logFile = nil

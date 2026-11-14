@@ -28,12 +28,14 @@ type Operation struct {
 	Key          string                `json:"key,omitempty"`
 	Name         string                `json:"name,omitempty"`
 	ID           string                `json:"id,omitempty"`
+	URL          string                `json:"url,omitempty"`
 	Data         []byte                `json:"data,omitempty"`
 	Expected     []byte                `json:"expected,omitempty"`
 	Node         *profile.Node         `json:"node,omitempty"`
 	Subscription *profile.Subscription `json:"subscription,omitempty"`
 	Targets      []proxy.ProbeTarget   `json:"targets,omitempty"`
 	Tray         *TrayPreferences      `json:"tray,omitempty"`
+	Benchmark    *BenchmarkRequest     `json:"benchmark,omitempty"`
 }
 
 type LatencyValue struct {
@@ -45,9 +47,12 @@ type LatencyValue struct {
 }
 
 type OperationResult struct {
-	Document  []byte         `json:"document,omitempty"`
-	Rules     RuleSaveResult `json:"rules"`
-	Latencies []LatencyValue `json:"latencies,omitempty"`
+	Document  []byte                `json:"document,omitempty"`
+	Rules     RuleSaveResult        `json:"rules"`
+	Policies  DocumentSaveResult    `json:"policies"`
+	Latencies []LatencyValue        `json:"latencies,omitempty"`
+	Routing   proxy.RoutingResult   `json:"routing,omitempty"`
+	Benchmark proxy.BenchmarkReport `json:"benchmark,omitempty"`
 }
 
 type RemoteOperations interface {

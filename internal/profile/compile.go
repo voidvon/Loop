@@ -52,6 +52,7 @@ func (s Store) compileNode(node *Node) (map[string]any, error) {
 		return nil, err
 	}
 	delete(base, "policy_groups")
+	delete(base, "default_policy")
 	// Relative rule-set paths belong to the policy directory, not the runtime dir.
 	if sets, ok := route["rule_set"].([]any); ok {
 		for _, value := range sets {

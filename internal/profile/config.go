@@ -31,7 +31,7 @@ func parseConfig(data []byte) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := onlyKeys(config, MainConfigName, "log", "inbounds", "experimental", "route", "dns", "http_clients", "policy_groups"); err != nil {
+	if err := onlyKeys(config, MainConfigName, "log", "inbounds", "experimental", "route", "dns", "http_clients", "policy_groups", "default_policy"); err != nil {
 		return nil, err
 	}
 	return config, nil

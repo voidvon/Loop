@@ -1,7 +1,9 @@
 package profile
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -64,7 +66,47 @@ func (s Store) Select(selection Selection) error {
 	if _, err := s.selected(selection); err != nil {
 		return err
 	}
-	return WriteJSON(filepath.Join(s.Dir, "selection.json"), selection)
+	states, err := s.PolicyStates()
+	if err != nil {
+		return err
+	}
+	key := NodeKey(selection.Source, selection.Node)
+	found := false
+	for _, state := range states {
+		if state.Group.Name != DefaultPolicy {
+			continue
+		}
+		for _, member := range state.Members {
+			found = found || member.Key == key
+		}
+	}
+	if !found {
+		return errors.New("节点不在 Available 中，请使用策略页或 policy select 选择对应策略的成员")
+	}
+	choices, err := s.policyChoices()
+	if err != nil {
+		return err
+	}
+	choices[DefaultPolicy] = key
+	// Keep legacy CLI state in sync; strategy choices remain authoritative.
+	path := filepath.Join(s.Dir, "selection.json")
+	previous, readErr := os.ReadFile(path)
+	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+		return readErr
+	}
+	if err := WriteJSON(path, selection); err != nil {
+		return err
+	}
+	if err := WriteJSON(filepath.Join(s.Dir, "policy-selections.json"), choices); err != nil {
+		var restoreErr error
+		if errors.Is(readErr, os.ErrNotExist) {
+			restoreErr = os.Remove(path)
+		} else {
+			restoreErr = writePrivateFile(path, previous)
+		}
+		return errors.Join(err, restoreErr)
+	}
+	return nil
 }
 
 var nodeTypes = map[string]bool{

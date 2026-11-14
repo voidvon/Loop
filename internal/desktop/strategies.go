@@ -4,13 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 	"sync/atomic"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -18,47 +16,50 @@ import (
 )
 
 type strategyPane struct {
-	root                           fyne.CanvasObject
-	window                         fyne.Window
-	controller                     *documentController
-	groups, members                *widget.List
-	title, detail, status, current *widget.Label
-	add, edit, remove, speed       *widget.Button
-	states                         []profile.PolicyState
-	baseline                       []byte
-	selected                       string
-	available, syncing             bool
-	loadError                      error
-	OnSelect                       func(string, string)
-	OnBusy                         func(bool)
-	OnChanged                      func()
-	latencies                      map[string]probeDisplay
-	probing, cancelRequested       bool
-	closed                         atomic.Bool
-	cancelProbe                    context.CancelFunc
-	probeDone                      chan struct{}
-	probeGroup, probeSummary       string
-	probeComplete, probeTotal      int
+	root                      fyne.CanvasObject
+	window                    fyne.Window
+	controller                *documentController
+	groups, members           *widget.List
+	header                    *infoRow
+	status, current           *widget.Label
+	add, edit, remove, speed  *widget.Button
+	setDefault                *widget.Button
+	defaultPolicy             string
+	states                    []profile.PolicyState
+	rows                      []strategyMemberRow
+	headingRows               []int
+	baseline                  []byte
+	selected                  string
+	available, syncing        bool
+	loadError                 error
+	OnSelect                  func(string, string)
+	OnBusy                    func(bool)
+	OnChanged                 func()
+	latencies                 map[string]probeDisplay
+	probing, cancelRequested  bool
+	closed                    atomic.Bool
+	cancelProbe               context.CancelFunc
+	probeDone                 chan struct{}
+	probeGroup, probeSummary  string
+	probeComplete, probeTotal int
 }
 
 func newStrategyPane(window fyne.Window, c *documentController, current *widget.Label) *strategyPane {
 	p := &strategyPane{window: window, controller: c, current: current, selected: profile.DefaultPolicy, available: true, latencies: map[string]probeDisplay{}}
-	p.title = sectionTitle("")
-	p.detail = quietLabel("")
 	p.status = quietLabel("")
 	p.groups = widget.NewList(func() int { return len(p.states) }, func() fyne.CanvasObject {
-		return strategyRow()
+		return newListRow(nil)
 	}, func(id widget.ListItemID, obj fyne.CanvasObject) {
 		if id < 0 || id >= len(p.states) {
 			return
 		}
 		state := p.states[id]
-		row := obj.(*widget.RichText)
+		row := obj.(*infoRow)
 		label := p.memberName(state, state.Selected)
 		if state.Error != "" {
 			label = "未选择可用节点"
 		}
-		setStrategyRow(row, state.Group.Name, label)
+		row.setText(state.Group.Name, label)
 	})
 	p.groups.OnSelected = func(id widget.ListItemID) {
 		if p.syncing || id < 0 || id >= len(p.states) {
@@ -68,23 +69,28 @@ func newStrategyPane(window fyne.Window, c *documentController, current *widget.
 		p.refreshDetail()
 	}
 	p.members = widget.NewList(func() int {
-		state := p.state()
-		if state == nil {
-			return 0
-		}
-		return len(state.Members)
+		return len(p.rows)
 	}, func() fyne.CanvasObject {
 		result := widget.NewLabel("")
 		result.TextStyle.Bold = true
-		return container.NewBorder(nil, nil, nil, container.NewHBox(result, widget.NewIcon(nil)), strategyRow())
+		row := newListRow(nil)
+		row.setTrailing(container.NewHBox(result, widget.NewIcon(nil)))
+		return row
 	}, func(id widget.ListItemID, obj fyne.CanvasObject) {
 		state := p.state()
-		if state == nil || id < 0 || id >= len(state.Members) {
+		if state == nil || id < 0 || id >= len(p.rows) {
 			return
 		}
-		m := state.Members[id]
-		row := obj.(*fyne.Container)
-		text := row.Objects[0].(*widget.RichText)
+		item := p.rows[id]
+		m := item.member
+		row := obj.(*infoRow)
+		trailing := row.trailingObject.(*fyne.Container)
+		if item.heading != "" {
+			row.setText(item.heading, "")
+			row.setTrailingVisible(false)
+			return
+		}
+		row.setTrailingVisible(true)
 		detail := m.Detail
 		if m.IsGroup {
 			for _, child := range p.states {
@@ -96,8 +102,7 @@ func newStrategyPane(window fyne.Window, c *documentController, current *widget.
 				}
 			}
 		}
-		setStrategyRow(text, m.Name, detail)
-		trailing := row.Objects[1].(*fyne.Container)
+		row.setText(m.Name, detail)
 		label := trailing.Objects[0].(*widget.Label)
 		value, importance := p.latencyLabel(m.Key)
 		label.Importance = importance
@@ -108,17 +113,21 @@ func newStrategyPane(window fyne.Window, c *documentController, current *widget.
 		if m.Key == state.Selected {
 			icon.SetResource(theme.ConfirmIcon())
 		}
+		row.Refresh()
 	})
 	p.members.OnSelected = func(id widget.ListItemID) {
 		if p.syncing {
 			return
 		}
 		state := p.state()
-		if state == nil || id < 0 || id >= len(state.Members) {
+		if state == nil || id < 0 || id >= len(p.rows) {
 			return
 		}
-		group, key := state.Group.Name, state.Members[id].Key
+		group, key := state.Group.Name, p.rows[id].member.Key
 		p.members.UnselectAll()
+		if key == "" {
+			return
+		}
 		if !p.canSelect() {
 			return
 		}
@@ -130,7 +139,10 @@ func newStrategyPane(window fyne.Window, c *documentController, current *widget.
 	p.edit = widget.NewButtonWithIcon("", theme.DocumentCreateIcon(), func() { p.editGroup(false) })
 	p.remove = widget.NewButtonWithIcon("", theme.DeleteIcon(), p.deleteGroup)
 	p.speed = widget.NewButtonWithIcon("", latencyIcon, p.startLatency)
-	right := container.NewBorder(container.NewVBox(container.NewBorder(nil, nil, p.title, container.NewHBox(p.speed, p.edit, p.remove), nil), p.detail, widget.NewSeparator()), nil, nil, nil, p.members)
+	p.setDefault = widget.NewButton("设为默认", p.makeDefault)
+	p.setDefault.Importance = widget.LowImportance
+	p.header = newSectionHeader("策略组", "", nil, container.NewHBox(p.setDefault, p.speed, p.edit, p.remove))
+	right := container.NewBorder(container.NewVBox(p.header, widget.NewSeparator()), nil, nil, nil, p.members)
 	split := container.NewHSplit(panel(p.groups), panel(right))
 	split.Offset = 0.28
 	header := inset(0, 12, 0, 0, container.NewBorder(nil, nil, nil, container.NewCenter(p.add), pageHeading("策略")))
@@ -166,16 +178,25 @@ func (p *strategyPane) Refresh() {
 	if p.loadError == nil {
 		p.states, p.loadError = p.controller.service.Store.PolicyStates()
 	}
+	p.defaultPolicy = ""
+	if p.loadError == nil {
+		var config map[string]any
+		config, p.loadError = profile.ParseDocument(p.baseline)
+		if p.loadError == nil {
+			p.defaultPolicy, p.loadError = profile.DefaultPolicyName(config)
+		}
+	}
+	p.current.SetText("未设置默认策略 · 请在策略页设置")
 	p.groups.Refresh()
 	index := 0
 	for i, state := range p.states {
 		if state.Group.Name == p.selected {
 			index = i
 		}
-		if state.Group.Name == profile.DefaultPolicy {
-			value := "Available  →  " + p.memberName(state, state.Selected)
+		if state.Group.Name == p.defaultPolicy {
+			value := p.defaultPolicy + "  →  " + p.memberName(state, state.Selected)
 			if state.Error != "" {
-				value = "Available · 请在策略页选择节点"
+				value = p.defaultPolicy + " · 请在策略页选择成员"
 			}
 			p.current.SetText(value)
 		}
@@ -192,28 +213,43 @@ func (p *strategyPane) Refresh() {
 func (p *strategyPane) refreshDetail() {
 	state := p.state()
 	if state == nil {
-		p.title.SetText("策略组")
-		p.detail.SetText("暂无策略组")
+		p.header.setText("策略组", "暂无策略组")
 	} else {
-		p.title.SetText(state.Group.Name)
 		text := fmt.Sprintf("手动选择 · %d 个子策略", len(state.Members))
-		if state.Group.Name == profile.DefaultPolicy {
-			text += " · 全局代理与默认分流出口"
+		if state.Group.Name == p.defaultPolicy {
+			text += " · 全局代理默认出口"
 		}
 		if state.Error != "" {
 			text = state.Error
 		} else {
 			text += " · 当前：" + p.memberName(*state, state.Selected)
 		}
-		p.detail.SetText(text)
+		p.header.setText(state.Group.Name, text)
 	}
+	sample := newListRow(nil)
+	memberHeight := sample.MinSize().Height
+	sample.setText("分类", "")
+	headingHeight := sample.MinSize().Height
+	// Only headings override row height. Updating every node height would force
+	// a full list layout per node when opening a large subscription.
+	for _, i := range p.headingRows {
+		p.members.SetItemHeight(i, memberHeight)
+	}
+	p.rows = strategyMemberRows(state)
+	p.headingRows = nil
 	p.members.Refresh()
+	for i, row := range p.rows {
+		if row.heading != "" {
+			p.members.SetItemHeight(i, headingHeight)
+			p.headingRows = append(p.headingRows, i)
+		}
+	}
 	p.updateButtons()
 }
 func (p *strategyPane) canSelect() bool {
 	return !p.closed.Load() && p.available && !p.probing && !p.controller.working && !p.controller.closed && !p.controller.dirty() && p.loadError == nil
 }
-func (p *strategyPane) writable() bool { return p.canSelect() && p.controller.available }
+func (p *strategyPane) writable() bool { return p.canSelect() && p.controller.policiesAvailable() }
 func (p *strategyPane) updateButtons() {
 	if p.add == nil {
 		return
@@ -226,8 +262,13 @@ func (p *strategyPane) updateButtons() {
 	}
 	setEnabled(p.speed, !p.closed.Load() && ((p.probing && !p.cancelRequested) || (p.canSelect() && state != nil && len(state.Members) > 0)))
 	setEnabled(p.add, writable)
-	setEnabled(p.edit, writable && state != nil && p.selected != profile.DefaultPolicy)
-	setEnabled(p.remove, writable && state != nil && p.selected != profile.DefaultPolicy)
+	setEnabled(p.edit, writable && state != nil)
+	setEnabled(p.remove, writable && state != nil)
+	p.setDefault.SetText("设为默认")
+	if p.selected == p.defaultPolicy {
+		p.setDefault.SetText("默认策略")
+	}
+	setEnabled(p.setDefault, writable && state != nil && state.Error == "" && p.selected != p.defaultPolicy)
 	text := ""
 	if p.probeSummary != "" {
 		text = p.probeSummary
@@ -250,7 +291,7 @@ func (p *strategyPane) updateButtons() {
 }
 func (p *strategyPane) commit(groups []profile.PolicyGroup, baseline []byte, done func(error)) {
 	if !p.writable() {
-		done(fmt.Errorf("请停止连接并保存配置草稿后修改策略组"))
+		done(fmt.Errorf("请先保存配置草稿，并等待当前操作完成"))
 		return
 	}
 	draft, err := profile.ChangePolicyGroups(baseline, groups)
@@ -258,7 +299,7 @@ func (p *strategyPane) commit(groups []profile.PolicyGroup, baseline []byte, don
 		done(err)
 		return
 	}
-	p.controller.Run(draft, baseline, true, func(err error) {
+	p.controller.RunPolicies(draft, baseline, func(err error) {
 		if err == nil {
 			p.Refresh()
 		}
@@ -269,69 +310,15 @@ func (p *strategyPane) editGroup(add bool) {
 	if !p.writable() {
 		return
 	}
-	state := p.state()
-	g := profile.PolicyGroup{AllNodes: true}
-	if !add {
-		if state == nil || state.Group.Name == profile.DefaultPolicy {
-			return
-		}
-		g = state.Group
+	editor, err := newStrategyGroupEditor(p, add)
+	if err != nil {
+		dialog.ShowError(err, p.window)
+		return
 	}
-	baseline := append([]byte(nil), p.baseline...)
-	groups := make([]profile.PolicyGroup, len(p.states))
-	refs := []string{}
-	for i, state := range p.states {
-		groups[i] = state.Group
-		if state.Group.Name != g.Name {
-			refs = append(refs, state.Group.Name)
-		}
-	}
-	name := widget.NewEntry()
-	name.SetText(g.Name)
-	name.SetPlaceHolder("例如 Netflix")
-	if !add {
-		name.Disable()
-	}
-	all := widget.NewCheck("包含本地与全部订阅节点", nil)
-	all.SetChecked(g.AllNodes)
-	filter := widget.NewEntry()
-	filter.SetText(g.Filter)
-	filter.SetPlaceHolder("可选，按节点名称匹配正则表达式")
-	references := widget.NewCheckGroup(refs, nil)
-	references.SetSelected(g.Groups)
-	message := wrappedLabel("")
-	var editor *dialog.CustomDialog
-	save := widget.NewButtonWithIcon("保存", theme.DocumentSaveIcon(), func() {
-		next := profile.PolicyGroup{Name: strings.TrimSpace(name.Text), AllNodes: all.Checked, Filter: filter.Text, Groups: append([]string(nil), references.Selected...)}
-		candidate := append([]profile.PolicyGroup(nil), groups...)
-		if add {
-			candidate = append(candidate, next)
-		} else {
-			for i := range candidate {
-				if candidate[i].Name == g.Name {
-					candidate[i] = next
-				}
-			}
-		}
-		p.commit(candidate, baseline, func(err error) {
-			if err != nil {
-				message.SetText(err.Error())
-			} else {
-				p.selected = next.Name
-				p.Refresh()
-				editor.Hide()
-			}
-		})
-	})
-	save.Importance = widget.HighImportance
-	content := container.NewVBox(widget.NewForm(widget.NewFormItem("名称", name), widget.NewFormItem("节点来源", all), widget.NewFormItem("节点筛选", filter)), quietLabel("可引用的策略组"), references, wrappedLabel("新建应用策略后，请在规则页添加域名或 IP 规则并指向该策略。"))
-	footer := container.NewVBox(message, container.NewHBox(layout.NewSpacer(), widget.NewButton("取消", func() { editor.Hide() }), save))
-	editor = dialog.NewCustomWithoutButtons("策略组", container.NewBorder(nil, footer, nil, nil, container.NewVScroll(content)), p.window)
-	editor.Resize(fyne.NewSize(560, 540))
-	editor.Show()
+	editor.dialog.Show()
 }
 func (p *strategyPane) deleteGroup() {
-	if !p.writable() || p.selected == profile.DefaultPolicy {
+	if !p.writable() {
 		return
 	}
 	name := p.selected
@@ -348,11 +335,11 @@ func (p *strategyPane) deleteGroup() {
 				dialog.ShowError(err, p.window)
 				return
 			}
-			p.controller.Run(draft, baseline, true, func(err error) {
+			p.controller.RunPolicies(draft, baseline, func(err error) {
 				if err != nil {
 					dialog.ShowError(err, p.window)
 				} else {
-					p.selected = profile.DefaultPolicy
+					p.selected = ""
 					p.Refresh()
 				}
 			})
@@ -360,13 +347,20 @@ func (p *strategyPane) deleteGroup() {
 	}, p.window)
 }
 
-func strategyRow() *widget.RichText {
-	row := widget.NewRichText(&widget.TextSegment{Text: "策略\n", Style: widget.RichTextStyleStrong}, &widget.TextSegment{Text: "当前选择", Style: widget.RichTextStyle{Inline: true, ColorName: theme.ColorNameDisabled, SizeName: theme.SizeNameCaptionText}})
-	row.Truncation = fyne.TextTruncateEllipsis
-	return row
-}
-func setStrategyRow(row *widget.RichText, title, detail string) {
-	row.Segments[0].(*widget.TextSegment).Text = title + "\n"
-	row.Segments[1].(*widget.TextSegment).Text = detail
-	row.Refresh()
+func (p *strategyPane) makeDefault() {
+	if !p.writable() || p.state() == nil {
+		return
+	}
+	baseline := append([]byte(nil), p.baseline...)
+	draft, err := profile.ChangeDefaultPolicy(baseline, p.selected)
+	if err != nil {
+		dialog.ShowError(err, p.window)
+		return
+	}
+	p.controller.RunPolicies(draft, baseline, func(err error) {
+		if err != nil {
+			dialog.ShowError(err, p.window)
+		}
+		p.Refresh()
+	})
 }

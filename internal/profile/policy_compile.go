@@ -8,7 +8,14 @@ import (
 )
 
 func validatePolicyGroups(config map[string]any, groups []PolicyGroup) error {
-	allowed := map[string]bool{"proxy": true, "direct": true}
+	defaultPolicy, err := DefaultPolicyName(config)
+	if err != nil {
+		return err
+	}
+	allowed := map[string]bool{"direct": true}
+	if defaultPolicy != "" {
+		allowed["proxy"] = true
+	}
 	for _, g := range groups {
 		allowed[g.Name] = true
 	}
@@ -82,10 +89,11 @@ func (s Store) compileStrategies(config map[string]any) (map[string]any, error) 
 	for _, state := range states {
 		resolve(state.Group.Name)
 	}
-	if err := validity[DefaultPolicy]; err != nil {
+	defaultPolicy, err := s.DefaultStrategy()
+	if err != nil {
 		return nil, err
 	}
-	replaceProxy(config)
+	replaceProxy(config, defaultPolicy)
 	// All referenced strategy groups must resolve, even inside logical rules/DNS.
 	var check func(any) error
 	check = func(value any) error {
@@ -148,7 +156,7 @@ func (s Store) compileStrategies(config map[string]any) (map[string]any, error) 
 		}
 		outbounds = append(outbounds, map[string]any{"type": "selector", "tag": state.Group.Name, "outbounds": members, "default": state.Selected, "interrupt_exist_connections": true})
 	}
-	config["outbounds"] = append(outbounds, map[string]any{"type": "direct", "tag": "direct"})
+	config["outbounds"] = append(outbounds, map[string]any{"type": "direct", "tag": "direct"}, map[string]any{"type": "block", "tag": "reject"})
 	// The client owns choices. Give each selection combination a separate cache
 	// namespace so old sing-box selector state cannot override generated defaults.
 	if experimental, ok := config["experimental"].(map[string]any); ok {

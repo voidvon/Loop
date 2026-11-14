@@ -14,7 +14,7 @@ import (
 	"local/loop/internal/app"
 )
 
-// documentController coordinates UI jobs for both the editor and rule forms.
+// documentController coordinates UI jobs for the editor, rules and strategies.
 // Validation and persistence belong to app.Service, not to either view.
 // UI fields and callbacks are accessed on Fyne's main goroutine. The stopped
 // flag lets shutdown wait for background cleanup without posting new UI work.
@@ -31,7 +31,8 @@ type documentController struct {
 	Context                    context.Context
 	Running                    func() bool
 	SaveRules                  func(context.Context, []byte, []byte, bool) (app.RuleSaveResult, error)
-	OnRulesApplied             func(app.RuleSaveResult)
+	SavePolicies               func(context.Context, []byte, []byte, bool) (app.DocumentSaveResult, error)
+	OnApplied                  func(app.DocumentSaveResult)
 	stopped                    atomic.Bool
 	done                       chan struct{}
 }
@@ -52,7 +53,7 @@ func (c *documentController) changed() {
 func (c *documentController) SetAvailable(available bool) { c.available = available; c.changed() }
 
 func (c *documentController) Run(data, expected []byte, save bool, completed func(error)) {
-	c.run(data, expected, save, false, completed)
+	c.run(data, expected, save, nil, completed)
 }
 
 func (c *documentController) rulesAvailable() bool {
@@ -60,11 +61,17 @@ func (c *documentController) rulesAvailable() bool {
 }
 
 func (c *documentController) RunRules(data, expected []byte, completed func(error)) {
-	c.run(data, expected, true, true, completed)
+	c.run(data, expected, true, c.SaveRules, completed)
 }
 
-func (c *documentController) run(data, expected []byte, save, rules bool, completed func(error)) {
-	if c.closed || c.working || (!c.available && !(rules && c.SaveRules != nil)) {
+func (c *documentController) policiesAvailable() bool { return c.available || c.SavePolicies != nil }
+
+func (c *documentController) RunPolicies(data, expected []byte, completed func(error)) {
+	c.run(data, expected, true, c.SavePolicies, completed)
+}
+
+func (c *documentController) run(data, expected []byte, save bool, apply func(context.Context, []byte, []byte, bool) (app.DocumentSaveResult, error), completed func(error)) {
+	if c.closed || c.working || (!c.available && apply == nil) {
 		completed(errors.New("请停止连接并等待其他操作完成后保存"))
 		return
 	}
@@ -75,7 +82,7 @@ func (c *documentController) run(data, expected []byte, save, rules bool, comple
 	}
 	wasRunning := c.Running != nil && c.Running()
 	ctx, cancel := context.WithCancel(parent)
-	if !rules || c.SaveRules == nil {
+	if apply == nil {
 		cancel()
 		ctx, cancel = context.WithTimeout(parent, 20*time.Second)
 	}
@@ -88,8 +95,8 @@ func (c *documentController) run(data, expected []byte, save, rules bool, comple
 	c.changed()
 	title := "正在校验配置"
 	content := container.NewVBox(widget.NewProgressBarInfinite())
-	if rules && wasRunning && c.SaveRules != nil {
-		title = "正在保存并应用规则"
+	if wasRunning && apply != nil {
+		title = "正在保存并应用配置"
 		content.Add(widget.NewLabel("如需重连，将自动恢复连接。"))
 	} else {
 		content.Add(widget.NewButton("取消", cancel))
@@ -100,10 +107,10 @@ func (c *documentController) run(data, expected []byte, save, rules bool, comple
 		defer close(done)
 		var saved []byte
 		var err error
-		var ruleResult app.RuleSaveResult
-		if rules && c.SaveRules != nil {
-			ruleResult, err = c.SaveRules(ctx, draft, baseline, wasRunning)
-			saved = ruleResult.Document
+		var applied app.DocumentSaveResult
+		if apply != nil {
+			applied, err = apply(ctx, draft, baseline, wasRunning)
+			saved = applied.Document
 		} else if save {
 			saved, err = c.service.SaveDocument(ctx, draft, baseline)
 		} else {
@@ -122,8 +129,8 @@ func (c *documentController) run(data, expected []byte, save, rules bool, comple
 			if saved != nil && save && c.OnSaved != nil {
 				c.OnSaved(saved)
 			}
-			if rules && c.SaveRules != nil && c.OnRulesApplied != nil {
-				c.OnRulesApplied(ruleResult)
+			if apply != nil && c.OnApplied != nil {
+				c.OnApplied(applied)
 			}
 			if c.OnBusy != nil {
 				c.OnBusy(false)

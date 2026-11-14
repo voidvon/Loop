@@ -18,20 +18,6 @@ func sidebarBrand(status *widget.Label) fyne.CanvasObject {
 	name.Wrapping = fyne.TextWrapOff
 	status.SizeName = theme.SizeNameText
 	status.Wrapping = fyne.TextWrapOff
-	text := container.NewThemeOverride(
-		container.New(layout.NewCustomPaddedVBoxLayout(2), name, status),
-		brandTheme{fyne.CurrentApp().Settings().Theme()},
-	)
+	text := newTitleDetail(name, status)
 	return container.New(layout.NewCustomPaddedHBoxLayout(12), container.NewCenter(icon), container.NewCenter(text))
-}
-
-// Remove the labels' internal padding only in the brand block, so the two
-// lines share a left edge and remain close without changing other widgets.
-type brandTheme struct{ fyne.Theme }
-
-func (t brandTheme) Size(name fyne.ThemeSizeName) float32 {
-	if name == theme.SizeNameInnerPadding {
-		return 0
-	}
-	return t.Theme.Size(name)
 }

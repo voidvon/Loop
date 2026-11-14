@@ -83,7 +83,7 @@ func (p *rulesPane) editRuleSubscription(index int) {
 	if !p.writable() {
 		return
 	}
-	sub := profile.RuleSubscription{Format: "binary", UpdateInterval: "1d", Target: profile.DefaultPolicy, AfterResolve: true}
+	sub := profile.RuleSubscription{Format: "binary", UpdateInterval: "1d", Target: p.defaultTarget(), AfterResolve: true}
 	editableTarget := true
 	if index >= 0 {
 		if index >= len(p.routing.RuleSets) {

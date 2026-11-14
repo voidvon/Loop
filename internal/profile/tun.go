@@ -42,7 +42,9 @@ func applyTUN(config map[string]any) {
 		servers, _ := dns["servers"].([]any)
 		for i, item := range servers {
 			if server, ok := item.(map[string]any); ok && server["type"] == "local" {
-				servers[i] = map[string]any{"type": "udp", "tag": server["tag"], "server": "223.5.5.5", "detour": "direct"}
+				// New DNS transports dial directly by default. A detour to our
+				// empty direct outbound is rejected when the core starts.
+				servers[i] = map[string]any{"type": "udp", "tag": server["tag"], "server": "223.5.5.5"}
 			}
 		}
 	}

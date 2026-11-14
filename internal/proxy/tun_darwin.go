@@ -12,8 +12,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -32,9 +30,7 @@ type tunSession struct {
 
 func TUNAvailable() bool { return true }
 
-func shellQuote(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'" }
-
-func prepareTUN(helper string) (*tunSession, *exec.Cmd, error) {
+func prepareTUN(helper, core string) (*tunSession, *exec.Cmd, error) {
 	if err := tunhelper.CheckRouteConflict(); err != nil {
 		return nil, nil, err
 	}
@@ -69,9 +65,12 @@ func prepareTUN(helper string) (*tunSession, *exec.Cmd, error) {
 		return nil, nil, err
 	}
 	s := &tunSession{listener: listener, dir: dir, token: hex.EncodeToString(secret)}
-	command := shellQuote(helper) + " -socket " + shellQuote(filepath.Join(dir, "control.sock")) + " -token " + shellQuote(s.token)
-	script := "with timeout of 2147483647 seconds\ndo shell script " + strconv.Quote(command) + " with administrator privileges with prompt " + strconv.Quote("Loop 需要创建 TUN 虚拟网卡并接管网络流量。停止连接后将释放虚拟网卡和路由。") + "\nend timeout"
-	return s, exec.Command("/usr/bin/osascript", "-e", script), nil
+	core, err = filepath.Abs(core)
+	if err != nil {
+		s.cleanup()
+		return nil, nil, err
+	}
+	return s, exec.Command(helper, "-client", "-core", core, "-socket", filepath.Join(dir, "control.sock"), "-token", s.token), nil
 }
 
 func (s *tunSession) connect(ctx context.Context, done <-chan struct{}, core string, config []byte, log io.Writer) error {
@@ -118,11 +117,19 @@ func (s *tunSession) connect(ctx context.Context, done <-chan struct{}, core str
 	if hello.Token != s.token {
 		return errors.New("TUN 辅助进程身份验证失败")
 	}
+	if hello.Error != "" {
+		return errors.New(hello.Error)
+	}
 	core, err := filepath.Abs(core)
 	if err != nil {
 		return err
 	}
-	if err := json.NewEncoder(conn).Encode(tunhelper.Request{Core: core, Config: config}); err != nil {
+	request, err := tunhelper.BundleConfig(config)
+	if err != nil {
+		return err
+	}
+	request.Core = core
+	if err := json.NewEncoder(conn).Encode(request); err != nil {
 		return err
 	}
 	for {

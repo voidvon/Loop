@@ -27,17 +27,18 @@ type nodeManager struct {
 	service    *app.Service
 	root       fyne.CanvasObject
 
-	sources                            []profile.Subscription
-	nodeItems                          []profile.Node
-	sourceIndex                        int
-	locked, loading                    bool
-	message                            *widget.Label
-	localSource                        *choiceButton
-	summary, sourceTitle, sourceDetail *widget.Label
-	emptyNodes, emptySources           *widget.Label
-	add                                *widget.Button
-	nodes, subscriptions               *widget.List
-	contextMenu                        *widget.PopUpMenu
+	sources                  []profile.Subscription
+	nodeItems                []profile.Node
+	sourceIndex              int
+	locked, loading          bool
+	message                  *widget.Label
+	localSource              *choiceButton
+	summary                  *widget.Label
+	sourceHeader             *infoRow
+	emptyNodes, emptySources *widget.Label
+	add                      *widget.Button
+	nodes, subscriptions     *widget.List
+	contextMenu              *widget.PopUpMenu
 }
 
 func newNodeManager(window fyne.Window, service *app.Service) *nodeManager {
@@ -45,33 +46,21 @@ func newNodeManager(window fyne.Window, service *app.Service) *nodeManager {
 	m.message = quietLabel("右键本地节点或订阅可进行管理。")
 	m.message.Wrapping = fyne.TextWrapWord
 	m.nodes = widget.NewList(func() int { return len(m.nodeItems) }, func() fyne.CanvasObject {
-		name := widget.NewLabel("")
-		name.TextStyle.Bold = true
-		name.Truncation = fyne.TextTruncateEllipsis
-		detail := quietLabel("")
-		detail.Truncation = fyne.TextTruncateEllipsis
-		return newManagementRow(container.NewVBox(name, detail))
+		return newManagementRow(newListRow(nil))
 	}, func(id widget.ListItemID, object fyne.CanvasObject) {
 		node := m.nodeItems[id]
 		row := object.(*managementRow)
-		body := row.content.(*fyne.Container)
-		body.Objects[0].(*widget.Label).SetText(node.Name)
-		body.Objects[1].(*widget.Label).SetText(strings.ToUpper(fmt.Sprint(node.Outbound["type"])) + "  ·  " + fmt.Sprint(node.Outbound["server"]))
+		row.content.(*infoRow).setText(node.Name, strings.ToUpper(fmt.Sprint(node.Outbound["type"]))+"  ·  "+fmt.Sprint(node.Outbound["server"]))
 		sourceID := m.sources[m.sourceIndex].ID
 		row.onTap = func() { m.nodes.Select(id) }
 		row.onSecondary = func(position fyne.Position) { m.showContextMenu(m.nodeMenu(sourceID, node.ID), position) }
 	})
 	m.subscriptions = widget.NewList(func() int { return max(0, len(m.sources)-1) }, func() fyne.CanvasObject {
-		name := widget.NewLabel("")
-		name.TextStyle.Bold = true
-		name.Truncation = fyne.TextTruncateEllipsis
-		return newManagementRow(container.NewBorder(nil, nil, widget.NewIcon(theme.NewColoredResource(theme.FolderIcon(), colorAccent)), nil, container.NewVBox(name, quietLabel(""))))
+		return newManagementRow(newListRow(theme.NewColoredResource(theme.FolderIcon(), colorAccent)))
 	}, func(id widget.ListItemID, object fyne.CanvasObject) {
 		sub := m.sources[id+1]
 		item := object.(*managementRow)
-		row := item.content.(*fyne.Container).Objects[0].(*fyne.Container)
-		row.Objects[0].(*widget.Label).SetText(sub.Name)
-		row.Objects[1].(*widget.Label).SetText(fmt.Sprintf("%d 个节点", len(sub.Nodes)))
+		item.content.(*infoRow).setText(sub.Name, fmt.Sprintf("%d 个节点", len(sub.Nodes)))
 		item.onTap = func() { m.subscriptions.Select(id) }
 		item.onSecondary = func(position fyne.Position) { m.showContextMenu(m.subscriptionMenu(sub.ID), position) }
 	})

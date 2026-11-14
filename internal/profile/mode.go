@@ -36,7 +36,7 @@ func (m Mode) Description() string {
 	case ModeRule:
 		return "按已保存的分流规则处理流量，默认国内直连、其他代理。"
 	case ModeGlobal:
-		return "局域网保持直连，其余进入本软件的流量均使用 Available 默认策略。"
+		return "局域网保持直连，其余进入本软件的流量均使用已设置的默认策略。"
 	default:
 		return "请重新选择分流模式。"
 	}
@@ -109,10 +109,17 @@ func (s Store) compileMode(mode Mode) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	defaultPolicy, err := s.DefaultStrategy()
+	if err != nil {
+		return nil, err
+	}
+	if mode == ModeGlobal && defaultPolicy == "" {
+		return nil, errors.New("未设置全局代理默认策略，请在策略页选择一个组并点击设为默认")
+	}
 	if mode != ModeDirect {
-		// Global mode ignores individual application routing, but all modes use Available.
+		// Global mode uses the configured default, independently of saved rules.
 		if mode == ModeGlobal {
-			config["route"] = map[string]any{"final": DefaultPolicy}
+			config["route"] = map[string]any{"final": defaultPolicy}
 			delete(config, "dns")
 			delete(config, "http_clients")
 		}
@@ -141,8 +148,8 @@ func (s Store) compileMode(mode Mode) (map[string]any, error) {
 			map[string]any{"action": "resolve"},
 			map[string]any{"ip_is_private": true, "action": "route", "outbound": "direct"},
 		}
-		route["final"] = DefaultPolicy
-		dns["servers"] = append(dns["servers"].([]any), map[string]any{"type": "https", "tag": "dns-proxy", "server": "1.1.1.1", "detour": DefaultPolicy})
+		route["final"] = defaultPolicy
+		dns["servers"] = append(dns["servers"].([]any), map[string]any{"type": "https", "tag": "dns-proxy", "server": "1.1.1.1", "detour": defaultPolicy})
 		dns["rules"] = []any{map[string]any{"domain_suffix": localDomains, "action": "route", "server": "dns-direct"}}
 		dns["final"] = "dns-proxy"
 	}

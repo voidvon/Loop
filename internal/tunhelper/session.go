@@ -18,8 +18,9 @@ import (
 )
 
 type Request struct {
-	Core   string          `json:"core"`
-	Config json.RawMessage `json:"config"`
+	Core      string          `json:"core"`
+	Config    json.RawMessage `json:"config"`
+	Resources [][]byte        `json:"resources,omitempty"`
 }
 
 type Message struct {
@@ -71,18 +72,36 @@ func Serve(ctx context.Context, conn net.Conn, token string) error {
 }
 
 func serve(ctx context.Context, conn net.Conn, token string, setupDNS func(map[string]any) (func(), <-chan struct{}, error)) error {
-	defer conn.Close()
+	return serveSession(ctx, conn, token, setupDNS, "")
+}
+
+func serveSession(ctx context.Context, conn net.Conn, token string, setupDNS func(map[string]any) (func(), <-chan struct{}, error), managedCore string) (resultErr error) {
 	w := &streamWriter{encoder: json.NewEncoder(conn), ready: make(chan struct{})}
+	defer func() {
+		if resultErr != nil {
+			conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
+			_ = w.send(Message{Error: resultErr.Error()})
+		}
+		conn.Close()
+	}()
 	conn.SetDeadline(time.Now().Add(10 * time.Second))
 	if err := w.send(Message{Token: token}); err != nil {
 		return err
 	}
 	var req Request
-	if err := json.NewDecoder(io.LimitReader(conn, 16<<20)).Decode(&req); err != nil {
+	limit := int64(16 << 20)
+	if managedCore != "" {
+		limit = maxRequestSize
+	}
+	if err := json.NewDecoder(io.LimitReader(conn, limit)).Decode(&req); err != nil {
 		return err
 	}
 	conn.SetDeadline(time.Time{})
-	if !filepath.IsAbs(req.Core) {
+	core := req.Core
+	if managedCore != "" {
+		core = managedCore
+	}
+	if !filepath.IsAbs(core) {
 		return errors.New("内核路径必须为绝对路径")
 	}
 	state, err := os.MkdirTemp("", "loop-tun-root-*")
@@ -93,8 +112,15 @@ func serve(ctx context.Context, conn net.Conn, token string, setupDNS func(map[s
 	// Privileged files stay in a private temporary directory. Never let a user
 	// log/cache path become an arbitrary root file write.
 	var config map[string]any
-	if err := json.Unmarshal(req.Config, &config); err != nil {
-		return err
+	if managedCore != "" {
+		config, err = prepareManagedConfig(req, state)
+		if err != nil {
+			return err
+		}
+	} else {
+		if err := json.Unmarshal(req.Config, &config); err != nil {
+			return err
+		}
 	}
 	if config == nil {
 		return errors.New("配置为空")
@@ -109,7 +135,7 @@ func serve(ctx context.Context, conn net.Conn, token string, setupDNS func(map[s
 	if err := os.WriteFile(configPath, data, 0600); err != nil {
 		return err
 	}
-	cmd := exec.Command(req.Core, "run", "-c", configPath, "-D", state)
+	cmd := exec.Command(core, "run", "-c", configPath, "-D", state)
 	cmd.Env = []string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin", "HOME=" + state, "TMPDIR=" + state}
 	cmd.Stdout, cmd.Stderr = w, w
 	if err := cmd.Start(); err != nil {

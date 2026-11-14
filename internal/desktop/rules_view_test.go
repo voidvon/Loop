@@ -40,7 +40,7 @@ func TestRulesSectionsKeepGlobalIndexesAndGuardRecycledMenus(t *testing.T) {
 	card := newRuleCard()
 	pane.updateRuleCard(0, card)
 	pane.groups.Select(2)
-	if !reflect.DeepEqual(pane.filtered, []int{0}) || pane.sectionTitle.Text != "订阅规则" {
+	if !reflect.DeepEqual(pane.filtered, []int{0}) || pane.sectionHeader.title.Text != "订阅规则" {
 		t.Fatal("remote section missing")
 	}
 	card.onMenu(fyne.NewPos(0, 0))

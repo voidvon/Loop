@@ -17,6 +17,8 @@ const (
 const (
 	moreStartup = iota
 	moreMenuBar
+	moreRouting
+	moreBenchmark
 )
 
 // Menu-bar preferences affect presentation only and stay outside proxy profiles.
@@ -62,6 +64,8 @@ type morePane struct {
 	body            *fyne.Container
 	menuBarPage     fyne.CanvasObject
 	startup         *startupPane
+	routing         *routingPane
+	benchmark       *benchmarkPane
 	selected        int
 	modeLetter      *widget.Check
 	dimDisconnected *widget.Check
@@ -77,24 +81,26 @@ func newMorePane(prefs fyne.Preferences) *morePane {
 	p.policies = p.preferenceCheck("显示策略列表", prefTrayPolicies, settings.ShowPolicies)
 
 	p.startup = newStartupPane()
-	p.categories = widget.NewList(func() int { return 2 }, func() fyne.CanvasObject {
-		name := widget.NewLabelWithStyle("", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-		detail := quietLabel("")
-		detail.Wrapping = fyne.TextWrapOff
-		return container.NewBorder(nil, nil, container.NewCenter(widget.NewIcon(theme.ComputerIcon())), nil,
-			container.NewVBox(name, detail))
+	p.routing = newRoutingPane()
+	p.benchmark = newBenchmarkPane()
+	p.categories = widget.NewList(func() int { return 4 }, func() fyne.CanvasObject {
+		return newListRow(theme.ComputerIcon())
 	}, func(id widget.ListItemID, object fyne.CanvasObject) {
-		row := object.(*fyne.Container)
-		labels := row.Objects[0].(*fyne.Container)
+		row := object.(*infoRow)
 		name, detail := "菜单栏", "图标与快捷操作"
 		icon := theme.NewColoredResource(theme.ComputerIcon(), colorOrange)
 		if id == moreStartup {
 			name, detail = "开机自启", "系统设置"
 			icon = theme.NewColoredResource(theme.LoginIcon(), theme.ColorNameSuccess)
+		} else if id == moreRouting {
+			name, detail = "分流测试", "网址、节点与延迟"
+			icon = theme.NewColoredResource(latencyIcon, theme.ColorNamePrimary)
+		} else if id == moreBenchmark {
+			name, detail = "批量测速", "并发请求与节点对比"
+			icon = theme.NewColoredResource(theme.ListIcon(), theme.ColorNamePrimary)
 		}
-		labels.Objects[0].(*widget.Label).SetText(name)
-		labels.Objects[1].(*widget.Label).SetText(detail)
-		row.Objects[1].(*fyne.Container).Objects[0].(*widget.Icon).SetResource(icon)
+		row.setText(name, detail)
+		row.setIcon(icon)
 	})
 	p.categories.HideSeparators = true
 	p.categories.OnSelected = p.selectCategory
@@ -120,13 +126,17 @@ func newMorePane(prefs fyne.Preferences) *morePane {
 }
 
 func (p *morePane) selectCategory(index int) {
-	if index < moreStartup || index > moreMenuBar {
+	if index < moreStartup || index > moreBenchmark {
 		return
 	}
 	p.selected = index
 	page := p.menuBarPage
 	if index == moreStartup {
 		page = p.startup.root
+	} else if index == moreRouting {
+		page = p.routing.root
+	} else if index == moreBenchmark {
+		page = p.benchmark.root
 	}
 	p.body.Objects = []fyne.CanvasObject{page}
 	p.body.Refresh()
@@ -136,13 +146,15 @@ func (p *morePane) selectCategory(index int) {
 func (p *morePane) Refresh() {
 	if p.selected == moreStartup {
 		p.startup.Refresh()
+	} else if p.selected == moreBenchmark {
+		p.benchmark.Refresh()
 	}
 }
 
 func menuBarSetting(check *widget.Check, description string) fyne.CanvasObject {
-	detail := quietLabel(description)
-	detail.Wrapping = fyne.TextWrapOff
-	return container.NewVBox(check, inset(0, 8, 32, 8, detail))
+	title := check.Text
+	check.SetText("启用")
+	return newSectionHeader(title, description, nil, check)
 }
 
 func (p *morePane) preferenceCheck(label, key string, initial bool) *widget.Check {

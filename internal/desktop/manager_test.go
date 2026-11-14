@@ -37,7 +37,7 @@ func TestNodeManagementBrowsingDoesNotChangeActiveNodeOrRules(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.sourceTitle.Text != "本地节点" || m.nodeItems[0].ID != "a" {
+	if m.sourceHeader.title.Text != "本地节点" || m.nodeItems[0].ID != "a" {
 		t.Fatal("initial source is not local")
 	}
 	m.subscriptions.Select(1)
@@ -200,14 +200,14 @@ func TestNodeSourceRefreshPreservesIDAndFallsBackAfterDeletion(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.refresh()
-	if m.sourceIndex != 1 || m.sourceTitle.Text != sub.Name {
+	if m.sourceIndex != 1 || m.sourceHeader.title.Text != sub.Name {
 		t.Fatal("refresh lost selected subscription ID")
 	}
 	if err := s.DeleteSubscription(sub.ID); err != nil {
 		t.Fatal(err)
 	}
 	m.refresh()
-	if m.sourceIndex != 0 || m.sourceTitle.Text != "本地节点" {
+	if m.sourceIndex != 0 || m.sourceHeader.title.Text != "本地节点" {
 		t.Fatal("deleted source did not fall back safely")
 	}
 }

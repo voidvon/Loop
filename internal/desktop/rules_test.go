@@ -55,7 +55,7 @@ func TestRulesCanSaveOnlineAndSynchronizeConnectionAfterRestart(t *testing.T) {
 			c.SaveRules = func(ctx context.Context, data, expected []byte, connected bool) (app.RuleSaveResult, error) {
 				return service.SaveRules(ctx, backend, data, expected, connected)
 			}
-			c.OnRulesApplied = func(result app.RuleSaveResult) { running = result.Running }
+			c.OnApplied = func(result app.RuleSaveResult) { running = result.Running }
 			busy := false
 			c.OnBusy = func(value bool) { busy = value; shell.SetModeEnabled(!value) }
 			w.SetContent(shell.root)

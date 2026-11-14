@@ -21,23 +21,24 @@ const ProtocolVersion = 1
 var ErrBusy = errors.New("后台正在处理其他操作，请稍后重试")
 
 type Snapshot struct {
-	Protocol       int                   `json:"protocol"`
-	Instance       string                `json:"instance"`
-	PID            int                   `json:"pid"`
-	Revision       uint64                `json:"revision"`
-	Running        bool                  `json:"running"`
-	Busy           bool                  `json:"busy"`
-	Closing        bool                  `json:"closing"`
-	Mode           profile.Mode          `json:"mode"`
-	TUN            bool                  `json:"tun"`
-	Profiles       string                `json:"profiles,omitempty"`
-	Config         string                `json:"config,omitempty"`
-	CoreError      string                `json:"core_error,omitempty"`
-	Error          string                `json:"error,omitempty"`
-	PolicyError    string                `json:"policy_error,omitempty"`
-	Policies       []profile.PolicyState `json:"policies,omitempty"`
-	Tray           app.TrayPreferences   `json:"tray"`
-	TrayConfigured bool                  `json:"tray_configured"`
+	Protocol       int                      `json:"protocol"`
+	Instance       string                   `json:"instance"`
+	PID            int                      `json:"pid"`
+	Revision       uint64                   `json:"revision"`
+	Running        bool                     `json:"running"`
+	Busy           bool                     `json:"busy"`
+	Closing        bool                     `json:"closing"`
+	Mode           profile.Mode             `json:"mode"`
+	TUN            bool                     `json:"tun"`
+	Profiles       string                   `json:"profiles,omitempty"`
+	Config         string                   `json:"config,omitempty"`
+	CoreError      string                   `json:"core_error,omitempty"`
+	Error          string                   `json:"error,omitempty"`
+	PolicyError    string                   `json:"policy_error,omitempty"`
+	Policies       []profile.PolicyState    `json:"policies,omitempty"`
+	Tray           app.TrayPreferences      `json:"tray"`
+	TrayConfigured bool                     `json:"tray_configured"`
+	Benchmark      *proxy.BenchmarkProgress `json:"benchmark,omitempty"`
 }
 
 type Controller struct {
@@ -156,15 +157,30 @@ func (c *Controller) Execute(requestCtx context.Context, request app.Operation) 
 	c.state.Busy = true
 	c.changedLocked()
 	c.mu.Unlock()
-	defer func() { c.refresh(running, err) }()
+	defer func() {
+		if request.Action == "test_routing" || request.Action == "benchmark" {
+			// A diagnostic failure is reported in its pane. Preserve live runtime
+			// status and any core-exit error delivered while the probe was running.
+			c.mu.Lock()
+			c.state.Busy = false
+			c.changedLocked()
+			c.mu.Unlock()
+			return
+		}
+		c.refresh(running, err)
+	}()
 	// Connection transactions survive loss of the UI/CLI socket. Only shutdown
 	// or their deadline cancels them; a disappearing frontend cannot break rollback.
 	ctx, cancel := context.WithTimeout(c.ctx, 3*time.Minute)
+	if request.Action == "benchmark" {
+		cancel()
+		ctx, cancel = context.WithCancel(c.ctx)
+	}
 	defer cancel()
 	// Cancelling a validation, import or probe cancels that task. Connection
 	// and recovery transactions are independent of the frontend lifetime.
 	switch request.Action {
-	case "validate_document", "save_document", "save_manual", "update_subscription", "measure_latencies":
+	case "validate_document", "save_document", "save_manual", "update_subscription", "measure_latencies", "test_routing", "benchmark":
 		requestWork, done := context.WithCancel(ctx)
 		stop := context.AfterFunc(requestCtx, done)
 		if requestCtx.Err() != nil {
@@ -209,13 +225,16 @@ func (c *Controller) Execute(requestCtx context.Context, request app.Operation) 
 		}
 		running, err = app.SwitchStrategy(ctx, c.backend, s.Store, request.Group, request.Key, running)
 	case "set_tun":
-		if err = stoppedOnly(); err != nil {
-			return result, err
+		if s.ConfigPath != "" {
+			return result, errors.New("完整配置模式不支持切换 TUN")
 		}
-		if s.ConfigPath != "" || request.Enabled == nil {
-			return result, errors.New("无法修改 TUN 设置")
+		if request.Enabled == nil {
+			return result, errors.New("缺少 enabled")
 		}
-		err = s.Store.SaveTUN(*request.Enabled)
+		running, err = app.SwitchTUN(ctx, c.backend, s.Store, *request.Enabled, running)
+	case "save_policies":
+		result.Policies, err = s.SavePolicies(ctx, c.backend, request.Data, request.Expected, running)
+		running = result.Policies.Running
 	case "save_rules":
 		result.Rules, err = s.SaveRules(ctx, c.backend, request.Data, request.Expected, running)
 		running = result.Rules.Running
@@ -263,6 +282,21 @@ func (c *Controller) Execute(requestCtx context.Context, request app.Operation) 
 			resultsMu.Lock()
 			result.Latencies = append(result.Latencies, item)
 			resultsMu.Unlock()
+		})
+	case "test_routing":
+		result.Routing, err = s.TestRouting(ctx, request.URL)
+	case "benchmark":
+		if request.Benchmark == nil {
+			return result, errors.New("缺少批量测速参数")
+		}
+		c.mu.Lock()
+		c.state.Benchmark = nil
+		c.mu.Unlock()
+		result.Benchmark, err = s.RunBenchmark(ctx, *request.Benchmark, func(progress proxy.BenchmarkProgress) {
+			c.mu.Lock()
+			c.state.Benchmark = &progress
+			c.changedLocked()
+			c.mu.Unlock()
 		})
 	case "set_tray":
 		if request.Tray == nil {

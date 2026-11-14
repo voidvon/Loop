@@ -1,7 +1,7 @@
 package profile
 
 import (
-	"errors"
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -10,9 +10,6 @@ import (
 // are removed together; active choices and routing dependencies must be changed
 // explicitly by the user. Nothing is written until the normal document save.
 func (s Store) RemovePolicyGroup(data []byte, name string) ([]byte, error) {
-	if name == DefaultPolicy {
-		return nil, errors.New("不能删除默认策略 Available")
-	}
 	config, err := ParseDocument(data)
 	if err != nil {
 		return nil, err
@@ -28,6 +25,10 @@ func (s Store) RemovePolicyGroup(data []byte, name string) ([]byte, error) {
 	if !found {
 		return nil, fmt.Errorf("策略组 %s 已不存在，请刷新后重试", name)
 	}
+	defaultPolicy, err := DefaultPolicyName(config)
+	if err != nil {
+		return nil, err
+	}
 	// Report the concrete dependency instead of a generic missing-group error.
 	var check func(any, string) error
 	check = func(value any, path string) error {
@@ -38,8 +39,14 @@ func (s Store) RemovePolicyGroup(data []byte, name string) ([]byte, error) {
 				if path != "" {
 					field = path + "." + key
 				}
-				if child == name && (key == "outbound" || key == "detour" || key == "download_detour" || field == "route.final") {
-					return fmt.Errorf("策略组 %s 正被 %s 引用，请先在规则页或配置页修改该引用后再删除", name, field)
+				if key == "outbound" || key == "detour" || key == "download_detour" || field == "route.final" {
+					alias := child == "proxy" && name == defaultPolicy
+					if child == name || alias {
+						if alias {
+							field += "（旧版 proxy，请先修改引用或设置其他默认策略）"
+						}
+						return fmt.Errorf("策略组 %s 正被 %s 引用，请先在规则页或配置页修改该引用后再删除", name, field)
+					}
 				}
 				if err := check(child, field); err != nil {
 					return err
@@ -86,5 +93,12 @@ func (s Store) RemovePolicyGroup(data []byte, name string) ([]byte, error) {
 		group.Groups = refs
 		kept = append(kept, group)
 	}
-	return ChangePolicyGroups(data, kept)
+	if name == defaultPolicy {
+		config["default_policy"] = ""
+	}
+	encoded, err := json.Marshal(config)
+	if err != nil {
+		return nil, err
+	}
+	return ChangePolicyGroups(encoded, kept)
 }

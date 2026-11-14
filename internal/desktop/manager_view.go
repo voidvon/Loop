@@ -13,9 +13,7 @@ import (
 func (m *nodeManager) buildView() {
 	m.summary = quietLabel("")
 	m.summary.Wrapping = fyne.TextWrapOff
-	m.sourceTitle = sectionTitle("")
-	m.sourceTitle.Truncation = fyne.TextTruncateEllipsis
-	m.sourceDetail = quietLabel("")
+	m.sourceHeader = newSectionHeader("", "", theme.NewColoredResource(theme.ComputerIcon(), colorAccent), nil)
 	m.localSource = newChoiceButton("本地节点", theme.ComputerIcon(), func() { m.selectSource(0) })
 	m.localSource.Alignment = widget.ButtonAlignLeading
 	m.emptySources = quietLabel("尚未添加订阅\n点击右上角 + 添加")
@@ -25,11 +23,9 @@ func (m *nodeManager) buildView() {
 	left := panel(container.NewBorder(
 		container.NewVBox(m.localSource.Button, inset(22, 8, 6, 0, quietLabel("订阅节点"))),
 		nil, nil, nil, sources))
-	header := container.NewBorder(nil, nil, container.NewGridWrap(fyne.NewSize(40, 40), iconTile(theme.ComputerIcon(), colorAccent)), nil,
-		container.NewVBox(m.sourceTitle, m.sourceDetail))
 	m.emptyNodes = widget.NewLabelWithStyle("", fyne.TextAlignCenter, fyne.TextStyle{})
 	list := container.NewStack(m.nodes, container.NewCenter(m.emptyNodes))
-	right := panel(container.NewBorder(inset(0, 12, 0, 0, header), inset(12, 0, 0, 0, m.message), nil, nil, list))
+	right := panel(container.NewBorder(inset(0, 12, 0, 0, m.sourceHeader), inset(12, 0, 0, 0, m.message), nil, nil, list))
 	m.add = widget.NewButtonWithIcon("", theme.ContentAddIcon(), m.addSource)
 	title := widget.NewLabelWithStyle("节点", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	title.SizeName = theme.SizeNameHeadingText
@@ -91,8 +87,7 @@ func (m *nodeManager) refreshSourceDetails() {
 			detail += "  ·  更新于 " + stamp.Local().Format("01-02 15:04")
 		}
 	}
-	m.sourceTitle.SetText(name)
-	m.sourceDetail.SetText(detail)
+	m.sourceHeader.setText(name, detail)
 	if len(m.nodeItems) == 0 {
 		text := "暂无节点"
 		if source.ID == "manual" {

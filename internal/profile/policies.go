@@ -21,12 +21,17 @@ type PolicyGroup struct {
 	AllNodes bool     `json:"all_nodes,omitempty"`
 	Filter   string   `json:"filter,omitempty"`
 	Groups   []string `json:"groups,omitempty"`
+	Builtins []string `json:"builtins,omitempty"`
+	Nodes    []string `json:"nodes,omitempty"`
+	Sources  []string `json:"sources,omitempty"`
 }
 type PolicyMember struct {
-	Key     string `json:"key"`
-	Name    string `json:"name"`
-	Detail  string `json:"detail,omitempty"`
-	IsGroup bool   `json:"is_group,omitempty"`
+	Key       string `json:"key"`
+	Name      string `json:"name"`
+	Detail    string `json:"detail,omitempty"`
+	IsGroup   bool   `json:"is_group,omitempty"`
+	IsBuiltin bool   `json:"is_builtin,omitempty"`
+	Source    string `json:"source,omitempty"`
 }
 type PolicyState struct {
 	Group    PolicyGroup    `json:"group"`
@@ -66,7 +71,7 @@ func PolicyGroups(config map[string]any) ([]PolicyGroup, error) {
 	}
 	names := map[string]bool{}
 	for _, g := range groups {
-		if strings.TrimSpace(g.Name) != g.Name || g.Name == "" || g.Name == "direct" || g.Name == "proxy" || g.Name == "reject" || strings.HasPrefix(g.Name, "node-") || names[g.Name] {
+		if strings.TrimSpace(g.Name) != g.Name || g.Name == "" || g.Name == "direct" || g.Name == "proxy" || g.Name == "reject" || g.Name == "DIRECT" || g.Name == "REJECT" || strings.HasPrefix(g.Name, "node-") || names[g.Name] {
 			return nil, fmt.Errorf("策略名称无效或重复：%s", g.Name)
 		}
 		names[g.Name] = true
@@ -75,12 +80,24 @@ func PolicyGroups(config map[string]any) ([]PolicyGroup, error) {
 				return nil, fmt.Errorf("%s 节点筛选：%w", g.Name, err)
 			}
 		}
-		if g.Name == DefaultPolicy && (!g.AllNodes || g.Filter != "" || len(g.Groups) > 0) {
-			return nil, errors.New("Available 必须包含全部节点，不能引用其他策略组")
+		for _, key := range g.Builtins {
+			if key != "direct" && key != "reject" {
+				return nil, fmt.Errorf("%s：不支持的内置类型 %s", g.Name, key)
+			}
 		}
-	}
-	if !names[DefaultPolicy] {
-		return nil, errors.New("必须保留默认策略 Available")
+		for _, key := range g.Nodes {
+			if !strings.HasPrefix(key, "node-") || len(key) != 37 {
+				return nil, fmt.Errorf("%s：节点标识无效 %s", g.Name, key)
+			}
+			if _, err := hex.DecodeString(strings.TrimPrefix(key, "node-")); err != nil {
+				return nil, fmt.Errorf("%s：节点标识无效", g.Name)
+			}
+		}
+		for _, id := range g.Sources {
+			if strings.TrimSpace(id) == "" {
+				return nil, fmt.Errorf("%s：节点来源不能为空", g.Name)
+			}
+		}
 	}
 	byName := map[string]PolicyGroup{}
 	for _, g := range groups {
@@ -153,29 +170,46 @@ func (s Store) PolicyStates() ([]PolicyState, error) {
 	states := []PolicyState{}
 	for _, g := range groups {
 		state := PolicyState{Group: g, Selected: choices[g.Name]}
+		seen := map[string]bool{}
+		appendMember := func(m PolicyMember) {
+			if !seen[m.Key] {
+				state.Members = append(state.Members, m)
+				seen[m.Key] = true
+			}
+		}
 		for _, ref := range g.Groups {
-			state.Members = append(state.Members, PolicyMember{Key: ref, Name: ref, Detail: "策略组", IsGroup: true})
+			appendMember(PolicyMember{Key: ref, Name: ref, Detail: "策略组", IsGroup: true})
+		}
+		for _, key := range g.Builtins {
+			appendMember(BuiltinMember(key))
 		}
 		var filter *regexp.Regexp
 		if g.Filter != "" {
 			filter = regexp.MustCompile(g.Filter)
 		}
-		if g.AllNodes {
-			for _, source := range sources {
-				for _, node := range source.Nodes {
-					if filter == nil || filter.MatchString(node.Name) {
-						state.Members = append(state.Members, PolicyMember{Key: NodeKey(source.ID, node.ID), Name: node.Name, Detail: source.Name})
-					}
+		selectedNodes, selectedSources := map[string]bool{}, map[string]bool{}
+		for _, key := range g.Nodes {
+			selectedNodes[key] = true
+		}
+		for _, id := range g.Sources {
+			selectedSources[id] = true
+		}
+		for _, source := range sources {
+			for _, node := range source.Nodes {
+				key := NodeKey(source.ID, node.ID)
+				if selectedNodes[key] || ((g.AllNodes || selectedSources[source.ID]) && (filter == nil || filter.MatchString(node.Name))) {
+					appendMember(PolicyMember{Key: key, Name: node.Name, Detail: source.Name, Source: source.ID})
 				}
 			}
 		}
-		if g.Name == DefaultPolicy {
-			if selectionErr != nil {
+		if legacyAvailable(g) && state.Selected == "" {
+			if selectionErr != nil && !errors.Is(selectionErr, os.ErrNotExist) {
 				state.Error = "无法读取 Available 的选择：" + selectionErr.Error()
-			} else {
+			} else if selectionErr == nil {
 				state.Selected = NodeKey(selection.Source, selection.Node)
 			}
-		} else if state.Selected == "" && len(state.Members) > 0 {
+		}
+		if state.Selected == "" && len(state.Members) > 0 {
 			state.Selected = state.Members[0].Key
 		}
 		found := false
@@ -248,7 +282,6 @@ func (s Store) SelectStrategy(group, key string) error {
 				}
 			}
 		}
-		return errors.New("找不到节点")
 	}
 	choices, err := s.policyChoices()
 	if err != nil {
@@ -258,9 +291,6 @@ func (s Store) SelectStrategy(group, key string) error {
 	// Later provider reordering must not silently pick a different node.
 	var pin func(string)
 	pin = func(name string) {
-		if name == DefaultPolicy {
-			return
-		}
 		for _, state := range states {
 			if state.Group.Name == name {
 				choices[name] = state.Selected
@@ -309,7 +339,7 @@ func (s Store) UpgradePolicyGroups() error {
 		return err
 	}
 	config["policy_groups"] = DefaultPolicyGroups()
-	replaceProxy(config)
+	replaceProxy(config, DefaultPolicy)
 	// App domain rules are explicit and only seeded when adopting strategy groups.
 	route, ok := config["route"].(map[string]any)
 	if !ok {
@@ -338,10 +368,10 @@ func (s Store) UpgradePolicyGroups() error {
 	}
 	return WriteJSON(path, config)
 }
-func replaceProxy(value any) {
+func replaceProxy(value any, policy string) {
 	if config, ok := value.(map[string]any); ok {
 		if route, ok := config["route"].(map[string]any); ok && route["final"] == "proxy" {
-			route["final"] = DefaultPolicy
+			route["final"] = policy
 		}
 	}
 
@@ -349,14 +379,14 @@ func replaceProxy(value any) {
 	case map[string]any:
 		for k, x := range v {
 			if (k == "outbound" || k == "detour" || k == "download_detour") && x == "proxy" {
-				v[k] = DefaultPolicy
+				v[k] = policy
 			} else {
-				replaceProxy(x)
+				replaceProxy(x, policy)
 			}
 		}
 	case []any:
 		for _, x := range v {
-			replaceProxy(x)
+			replaceProxy(x, policy)
 		}
 	}
 }

@@ -56,3 +56,19 @@ func SwitchStrategy(ctx context.Context, backend proxy.Backend, store profile.St
 	}
 	return true, nil
 }
+
+// SavePolicies applies group definitions in every mode, preserving the live
+// connection and current choices. The daemon serializes it with selections.
+func (s *Service) SavePolicies(ctx context.Context, backend proxy.Backend, draft, expected []byte, running bool) (DocumentSaveResult, error) {
+	if s.Remote != nil {
+		result, err := s.Remote.Execute(ctx, Operation{Action: "save_policies", Data: draft, Expected: expected})
+		return result.Policies, err
+	}
+	if s.ConfigPath != "" {
+		return DocumentSaveResult{Running: running}, errors.New("完整配置模式不支持编辑策略组")
+	}
+	if err := s.Store.ValidatePolicyEdit(draft, expected); err != nil {
+		return DocumentSaveResult{Running: running}, err
+	}
+	return s.saveLiveDocument(ctx, backend, draft, expected, running, false)
+}

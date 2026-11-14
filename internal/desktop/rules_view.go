@@ -25,11 +25,11 @@ func (p *rulesPane) buildView() {
 	})
 	p.saveFinal.Importance = widget.HighImportance
 	p.finalPage = container.NewVScroll(container.NewVBox(
-		inset(0, 16, 0, 0, container.NewBorder(nil, nil, iconTile(theme.LogoutIcon(), colorOrange), nil, container.NewVBox(sectionTitle("Final 兜底"), quietLabel("未命中其他规则时使用")))),
+		inset(0, 16, 0, 0, newSectionHeader("Final 兜底", "未命中其他规则时使用", theme.NewColoredResource(theme.LogoutIcon(), colorOrange), nil)),
 		widget.NewForm(widget.NewFormItem("处理策略", p.final)),
 		container.NewHBox(layout.NewSpacer(), p.saveFinal),
 	))
-	p.sectionTitle, p.sectionDetail = sectionTitle("本地规则"), quietLabel("")
+	p.sectionHeader = newSectionHeader("本地规则", "", theme.NewColoredResource(theme.ListIcon(), colorAccent), nil)
 	p.empty = widget.NewLabelWithStyle("暂无规则\n点击右上角 + 添加", fyne.TextAlignCenter, fyne.TextStyle{})
 	p.empty.Importance = widget.LowImportance
 	p.cardWidth = 252
@@ -41,21 +41,17 @@ func (p *rulesPane) buildView() {
 	}
 	p.list.OnUnselected = func(widget.GridWrapItemID) { p.selected = -1 }
 	p.localPage = container.NewBorder(
-		inset(0, 14, 0, 0, container.NewBorder(nil, nil, container.NewGridWrap(fyne.NewSize(36, 40), iconTile(theme.ListIcon(), colorAccent)), nil, container.NewVBox(p.sectionTitle, p.sectionDetail))),
+		inset(0, 14, 0, 0, p.sectionHeader),
 		nil, nil, nil, container.NewStack(container.New(ruleGridLayout{p}, p.list), container.NewCenter(p.empty)))
 	p.groups = widget.NewList(func() int { return 3 }, func() fyne.CanvasObject {
-		name, detail := widget.NewLabelWithStyle("", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), quietLabel("")
-		name.Truncation, detail.Truncation = fyne.TextTruncateEllipsis, fyne.TextTruncateEllipsis
-		return container.NewBorder(nil, nil, container.NewCenter(widget.NewIcon(theme.ListIcon())), nil, container.NewVBox(name, detail))
+		return newListRow(theme.ListIcon())
 	}, func(id widget.ListItemID, obj fyne.CanvasObject) {
-		row := obj.(*fyne.Container)
-		labels := row.Objects[0].(*fyne.Container)
+		row := obj.(*infoRow)
 		names := []string{"Final 兜底", "本地规则", "订阅规则"}
 		details := []string{compactRuleTarget(p.routing.Final), fmt.Sprintf("%d 条规则", len(p.localIndexes())), fmt.Sprintf("%d 个订阅", len(p.remoteSets))}
-		labels.Objects[0].(*widget.Label).SetText(names[id])
-		labels.Objects[1].(*widget.Label).SetText(details[id])
+		row.setText(names[id], details[id])
 		icons := []fyne.Resource{theme.LogoutIcon(), theme.DocumentIcon(), theme.FolderIcon()}
-		row.Objects[1].(*fyne.Container).Objects[0].(*widget.Icon).SetResource(icons[id])
+		row.setIcon(icons[id])
 	})
 	p.groups.HideSeparators = true
 	p.groups.OnSelected = func(id widget.ListItemID) {
@@ -86,8 +82,7 @@ func (p *rulesPane) refreshSection() {
 	if p.section == 2 {
 		title, detail = "订阅规则", fmt.Sprintf("%d 个 sing-box 规则集", len(p.filtered))
 	}
-	p.sectionTitle.SetText(title)
-	p.sectionDetail.SetText(detail)
+	p.sectionHeader.setText(title, detail)
 	if len(p.filtered) == 0 {
 		p.empty.Show()
 	} else {
@@ -190,7 +185,7 @@ func compactRuleTarget(target string) string {
 	case "direct":
 		return "DIRECT"
 	case "proxy":
-		return profile.DefaultPolicy
+		return "DEFAULT"
 	case "reject":
 		return "REJECT"
 	case "":

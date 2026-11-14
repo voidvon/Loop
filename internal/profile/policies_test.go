@@ -87,7 +87,7 @@ func TestPolicyGraphValidationAndMissingMembers(t *testing.T) {
 		{{Name: DefaultPolicy, AllNodes: true}, {Name: "a", Groups: []string{"missing"}}},
 		{{Name: DefaultPolicy, AllNodes: true}, {Name: "a", AllNodes: true, Filter: "["}},
 		{{Name: DefaultPolicy, AllNodes: true}, {Name: DefaultPolicy, AllNodes: true}},
-		{{Name: DefaultPolicy, Groups: []string{"a"}}, {Name: "a", AllNodes: true}},
+		{{Name: DefaultPolicy, Groups: []string{"a"}}, {Name: "a", Groups: []string{DefaultPolicy}}},
 	} {
 		if _, err := ChangePolicyGroups(data, groups); err == nil {
 			t.Fatal("accepted invalid graph", groups)
