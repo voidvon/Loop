@@ -19,40 +19,53 @@ func (s *desktopShell) homePage(status *widget.Label, toggle *widget.Button, cur
 
 	heading := container.NewBorder(nil, nil, nil,
 		container.NewCenter(s.modeSelect), pageHeading("首页"))
-	connection := panel(container.NewVBox(
-		container.NewBorder(nil, nil, quietLabel("代理连接"),
-			container.NewGridWrap(fyne.NewSize(42, 42), iconTile(theme.MediaPlayIcon(), colorAccent)), nil),
-		status,
-		quietLabel("启动后按当前分流模式处理流量。"),
-		inset(12, 0, 0, 0, container.NewHBox(container.NewGridWrap(fyne.NewSize(148, 42), toggle))),
-	))
+	connection := homeCard("代理连接", theme.MediaPlayIcon(), container.New(layout.NewCustomPaddedVBoxLayout(8),
+		homeLabel(status),
+		homeLabel(quietLabel("启动后按当前分流模式处理流量。")),
+	), container.NewHBox(container.NewGridWrap(fyne.NewSize(148, 42), toggle)))
 	manage := widget.NewButtonWithIcon("选择策略", theme.NavigateNextIcon(), func() { s.selectPage(pagePolicy) })
 	manage.IconPlacement = widget.ButtonIconTrailingText
 	manage.Importance = widget.LowImportance
-	node := panel(container.NewVBox(
-		container.NewBorder(nil, nil, quietLabel("默认策略"),
-			container.NewGridWrap(fyne.NewSize(42, 42), iconTile(theme.ComputerIcon(), colorAccent)), nil),
-		current,
-		quietLabel("全局代理使用此默认策略，分流规则可分别指定策略。"),
-		inset(12, 0, 0, 0, container.NewHBox(manage)),
-	))
-	capture := sectionCard("流量接管", "选择流量进入代理的方式", container.NewVBox(
+	node := homeCard("默认策略", theme.ComputerIcon(), container.New(layout.NewCustomPaddedVBoxLayout(8),
+		homeLabel(current),
+		homeLabel(quietLabel("全局代理使用此默认策略，分流规则可分别指定策略。")),
+	), container.NewHBox(container.NewGridWrap(fyne.NewSize(148, 42), manage)))
+	capture := homeCard("流量接管", theme.SettingsIcon(), container.New(layout.NewCustomPaddedVBoxLayout(8),
+		homeLabel(quietLabel("选择流量进入代理的方式")),
 		s.tunSwitch,
-		quietLabel("关闭时使用系统代理"),
-		quietLabel("TUN 接管 TCP / UDP；首次安装服务需授权，后续连接与配置重连免重复授权。"),
-	))
+		homeLabel(quietLabel("开启后接管 TCP / UDP；关闭时使用系统代理。")),
+	), homeLabel(quietLabel("首次安装服务需授权，之后重开应用和修改配置无需重复授权。")))
 	viewPolicy := widget.NewButtonWithIcon("查看策略", theme.NavigateNextIcon(), func() { s.selectPage(pagePolicy) })
 	viewPolicy.IconPlacement = widget.ButtonIconTrailingText
 	viewPolicy.Importance = widget.LowImportance
-	policy := sectionCard("分流策略", "规则独立于节点和订阅", container.NewVBox(
-		s.modeHelp,
+	policy := homeCard("分流策略", theme.ListIcon(), container.New(layout.NewCustomPaddedVBoxLayout(8),
+		homeLabel(quietLabel("规则独立于节点和订阅")),
+		homeLabel(s.modeHelp),
 		container.NewHBox(viewPolicy, layout.NewSpacer()),
-		quietLabel("连接中切换分流模式会自动重连。"),
-	))
-	grid := container.NewVBox(
-		container.NewGridWithColumns(2, connection, node),
-		container.NewGridWithColumns(2, capture, policy),
-		inset(8, 0, 4, 4, quietLabel("关闭窗口后继续连接；停止代理或退出 Loop 时恢复网络设置。")),
+	), homeLabel(quietLabel("连接中切换分流模式会自动重连。")))
+	grid := container.New(layout.NewCustomPaddedVBoxLayout(16),
+		homeCardRow(connection, node),
+		homeCardRow(capture, policy),
+		inset(0, 0, 4, 4, quietLabel("关闭窗口后继续连接；停止代理或退出 Loop 时恢复网络设置。")),
 	)
 	return container.NewBorder(inset(0, 12, 0, 0, heading), nil, nil, nil, container.NewVScroll(grid))
+}
+
+// Keep headings, content and actions inside the same padded area. The footer
+// stays at the bottom when the other card in the row needs more height.
+func homeCard(title string, icon fyne.Resource, body, footer fyne.CanvasObject) fyne.CanvasObject {
+	heading := container.NewBorder(nil, nil, nil,
+		container.NewGridWrap(fyne.NewSize(24, 24), iconTile(icon, colorAccent)), homeLabel(sectionTitle(title)))
+	content := container.NewBorder(inset(0, 12, 0, 0, heading), inset(16, 0, 0, 0, footer), nil, nil, body)
+	return panel(inset(16, 16, 16, 16, content))
+}
+
+func homeLabel(label *widget.Label) fyne.CanvasObject {
+	return container.NewThemeOverride(label, titleDetailTheme{fyne.CurrentApp().Settings().Theme()})
+}
+
+func homeCardRow(left, right fyne.CanvasObject) fyne.CanvasObject {
+	// The standard grid supplies the remaining gap between the two columns.
+	padding := fyne.Max(0, (16-theme.Padding())/2)
+	return container.NewGridWithColumns(2, inset(0, 0, 0, padding, left), inset(0, 0, padding, 0, right))
 }

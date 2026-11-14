@@ -172,7 +172,7 @@ func newDesktopShell(window fyne.Window, service *app.Service, manager *nodeMana
 	brand := sidebarBrand(shell.connectionLabel)
 	top := container.NewVBox(brand, inset(32, 0, 0, 0, navigation))
 	shell.appearance = container.NewVBox()
-	footer := container.NewVBox(shell.captureLabel, shell.appearance, quietLabel(app.DisplayName+"  /  0.16.14"))
+	footer := container.NewVBox(shell.captureLabel, shell.appearance, quietLabel(app.DisplayName+"  /  0.16.15"))
 	shell.sidebarPadding = inset(26, 20, 16, 16, container.NewBorder(top, footer, nil, nil, layout.NewSpacer()))
 	sidebar := container.NewStack(themedSurface(colorSidebar, 0), shell.sidebarPadding)
 	shell.sidebar = sidebar

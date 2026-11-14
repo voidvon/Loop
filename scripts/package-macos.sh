@@ -43,8 +43,8 @@ cat > "$app_dir/Contents/Info.plist" <<'PLIST'
   <key>CFBundleName</key><string>Loop</string>
   <key>CFBundleDisplayName</key><string>Loop</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.16.14</string>
-  <key>CFBundleVersion</key><string>42</string>
+  <key>CFBundleShortVersionString</key><string>0.16.15</string>
+  <key>CFBundleVersion</key><string>43</string>
   <key>LSMinimumSystemVersion</key><string>15.0</string>
   <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
@@ -58,8 +58,8 @@ cat > "$background_app/Contents/Info.plist" <<'PLIST'
   <key>CFBundleIdentifier</key><string>local.loop.background</string>
   <key>CFBundleName</key><string>Loop Background</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.16.14</string>
-  <key>CFBundleVersion</key><string>42</string>
+  <key>CFBundleShortVersionString</key><string>0.16.15</string>
+  <key>CFBundleVersion</key><string>43</string>
   <key>LSMinimumSystemVersion</key><string>15.0</string>
   <key>LSUIElement</key><true/>
 </dict></plist>
