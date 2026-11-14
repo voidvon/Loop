@@ -19,7 +19,9 @@ type strategyPane struct {
 	root                      fyne.CanvasObject
 	window                    fyne.Window
 	controller                *documentController
-	groups, members           *widget.List
+	groups                    *widget.List
+	members                   *widget.GridWrap
+	summary                   *widget.Label
 	header                    *infoRow
 	status, current           *widget.Label
 	add, edit, remove, speed  *widget.Button
@@ -27,7 +29,6 @@ type strategyPane struct {
 	defaultPolicy             string
 	states                    []profile.PolicyState
 	rows                      []strategyMemberRow
-	headingRows               []int
 	baseline                  []byte
 	selected                  string
 	available, syncing        bool
@@ -47,8 +48,13 @@ type strategyPane struct {
 func newStrategyPane(window fyne.Window, c *documentController, current *widget.Label) *strategyPane {
 	p := &strategyPane{window: window, controller: c, current: current, selected: profile.DefaultPolicy, available: true, latencies: map[string]probeDisplay{}}
 	p.status = quietLabel("")
+	p.summary = quietLabel("")
 	p.groups = widget.NewList(func() int { return len(p.states) }, func() fyne.CanvasObject {
-		return newListRow(nil)
+		row := newCollectionRow(strategyGroupIcon("Available"), 28, 7)
+		kind := quietLabel("select")
+		kind.Wrapping = fyne.TextWrapOff
+		row.setTrailing(homeLabel(kind))
+		return row
 	}, func(id widget.ListItemID, obj fyne.CanvasObject) {
 		if id < 0 || id >= len(p.states) {
 			return
@@ -57,9 +63,10 @@ func newStrategyPane(window fyne.Window, c *documentController, current *widget.
 		row := obj.(*infoRow)
 		label := p.memberName(state, state.Selected)
 		if state.Error != "" {
-			label = "未选择可用节点"
+			label = "暂无可用子策略"
 		}
 		row.setText(state.Group.Name, label)
+		row.setIcon(strategyGroupIcon(state.Group.Name))
 	})
 	p.groups.OnSelected = func(id widget.ListItemID) {
 		if p.syncing || id < 0 || id >= len(p.states) {
@@ -67,53 +74,32 @@ func newStrategyPane(window fyne.Window, c *documentController, current *widget.
 		}
 		p.selected = p.states[id].Group.Name
 		p.refreshDetail()
+		p.members.ScrollToTop()
 	}
-	p.members = widget.NewList(func() int {
-		return len(p.rows)
-	}, func() fyne.CanvasObject {
-		result := widget.NewLabel("")
-		result.TextStyle.Bold = true
-		row := newListRow(nil)
-		row.setTrailing(container.NewHBox(result, widget.NewIcon(nil)))
-		return row
-	}, func(id widget.ListItemID, obj fyne.CanvasObject) {
+	p.members = widget.NewGridWrap(func() int { return len(p.rows) }, func() fyne.CanvasObject {
+		return newMemberCard()
+	}, func(id widget.GridWrapItemID, obj fyne.CanvasObject) {
 		state := p.state()
 		if state == nil || id < 0 || id >= len(p.rows) {
 			return
 		}
-		item := p.rows[id]
-		m := item.member
-		row := obj.(*infoRow)
-		trailing := row.trailingObject.(*fyne.Container)
-		if item.heading != "" {
-			row.setText(item.heading, "")
-			row.setTrailingVisible(false)
-			return
-		}
-		row.setTrailingVisible(true)
-		detail := m.Detail
+		m := p.rows[id].member
+		detail := strategyMemberDetail(m)
 		if m.IsGroup {
 			for _, child := range p.states {
 				if child.Group.Name == m.Key {
 					detail = "策略组 · " + p.memberName(child, child.Selected)
 					if child.Error != "" {
-						detail = child.Error
+						detail = "策略组 · 暂无可用成员"
 					}
 				}
 			}
 		}
-		row.setText(m.Name, detail)
-		label := trailing.Objects[0].(*widget.Label)
 		value, importance := p.latencyLabel(m.Key)
-		label.Importance = importance
-		label.SetText(value)
-		label.Refresh()
-		icon := trailing.Objects[1].(*widget.Icon)
-		icon.SetResource(nil)
-		if m.Key == state.Selected {
-			icon.SetResource(theme.ConfirmIcon())
+		if value == "" {
+			value = "--"
 		}
-		row.Refresh()
+		obj.(*memberCard).update(m.Name, detail, value, importance, strategyMemberIcon(m), m.Key == state.Selected)
 	})
 	p.members.OnSelected = func(id widget.ListItemID) {
 		if p.syncing {
@@ -136,17 +122,19 @@ func newStrategyPane(window fyne.Window, c *documentController, current *widget.
 		}
 	}
 	p.add = widget.NewButtonWithIcon("", theme.ContentAddIcon(), func() { p.editGroup(true) })
-	p.edit = widget.NewButtonWithIcon("", theme.DocumentCreateIcon(), func() { p.editGroup(false) })
-	p.remove = widget.NewButtonWithIcon("", theme.DeleteIcon(), p.deleteGroup)
+	p.edit = widget.NewButtonWithIcon("", iconEdit, func() { p.editGroup(false) })
+	p.remove = widget.NewButtonWithIcon("", theme.NewColoredResource(iconTrash, theme.ColorNameError), p.deleteGroup)
 	p.speed = widget.NewButtonWithIcon("", latencyIcon, p.startLatency)
 	p.setDefault = widget.NewButton("设为默认", p.makeDefault)
 	p.setDefault.Importance = widget.LowImportance
-	p.header = newSectionHeader("策略组", "", nil, container.NewHBox(p.setDefault, p.speed, p.edit, p.remove))
-	right := container.NewBorder(container.NewVBox(p.header, widget.NewSeparator()), nil, nil, nil, p.members)
-	split := container.NewHSplit(panel(p.groups), panel(right))
-	split.Offset = 0.28
-	header := inset(0, 12, 0, 0, container.NewBorder(nil, nil, nil, container.NewCenter(p.add), pageHeading("策略")))
-	p.root = container.NewBorder(header, p.status, nil, nil, split)
+	actions := container.NewHBox(container.NewThemeOverride(p.setDefault, compactActionTheme{fyne.CurrentApp().Settings().Theme()}),
+		collectionAction(p.speed, colorSecondary), collectionAction(p.edit, colorAccent), collectionAction(p.remove, theme.ColorNameError))
+	p.header = newSectionHeader("策略组", "", strategyGroupIcon("Available"), actions)
+	right := container.NewBorder(inset(0, 20, 0, 0, p.header), nil, nil, nil,
+		collectionGrid(p.members, 12, 16, ""))
+	columns := collectionColumns(collectionSidebar(p.groups), collectionDetail(right))
+	header := collectionPageHeader("策略组", p.summary, collectionAction(p.add, colorAccent))
+	p.root = container.NewBorder(header, p.status, nil, nil, columns)
 	p.Refresh()
 	return p
 }
@@ -186,6 +174,13 @@ func (p *strategyPane) Refresh() {
 			p.defaultPolicy, p.loadError = profile.DefaultPolicyName(config)
 		}
 	}
+	total := 0
+	if sources, err := p.controller.service.Store.Sources(); err == nil {
+		for _, source := range sources {
+			total += len(source.Nodes)
+		}
+	}
+	p.summary.SetText(fmt.Sprintf("%d 个策略组 · %d 个节点", len(p.states), total))
 	p.current.SetText("未设置默认策略 · 请在策略页设置")
 	p.groups.Refresh()
 	index := 0
@@ -216,34 +211,19 @@ func (p *strategyPane) refreshDetail() {
 		p.header.setText("策略组", "暂无策略组")
 	} else {
 		text := fmt.Sprintf("手动选择 · %d 个子策略", len(state.Members))
-		if state.Group.Name == p.defaultPolicy {
-			text += " · 全局代理默认出口"
-		}
 		if state.Error != "" {
 			text = state.Error
-		} else {
-			text += " · 当前：" + p.memberName(*state, state.Selected)
 		}
 		p.header.setText(state.Group.Name, text)
+		p.header.setIcon(strategyGroupIcon(state.Group.Name))
 	}
-	sample := newListRow(nil)
-	memberHeight := sample.MinSize().Height
-	sample.setText("分类", "")
-	headingHeight := sample.MinSize().Height
-	// Only headings override row height. Updating every node height would force
-	// a full list layout per node when opening a large subscription.
-	for _, i := range p.headingRows {
-		p.members.SetItemHeight(i, memberHeight)
-	}
-	p.rows = strategyMemberRows(state)
-	p.headingRows = nil
-	p.members.Refresh()
-	for i, row := range p.rows {
-		if row.heading != "" {
-			p.members.SetItemHeight(i, headingHeight)
-			p.headingRows = append(p.headingRows, i)
+	p.rows = nil
+	for _, row := range strategyMemberRows(state) {
+		if row.heading == "" {
+			p.rows = append(p.rows, row)
 		}
 	}
+	p.members.Refresh()
 	p.updateButtons()
 }
 func (p *strategyPane) canSelect() bool {

@@ -35,11 +35,11 @@ type desktopShell struct {
 	current         int
 	refreshers      map[int]func()
 	store           profile.Store
-	modeSelect      *widget.RadioGroup
+	modeSelect      *modeSelector
 	modeHelp        *widget.Label
 	syncingMode     bool
 	rawConfig       bool
-	tunSwitch       *widget.Check
+	tunSwitch       *toggleSwitch
 	captureLabel    *widget.Label
 	connectionLabel *widget.Label
 	running         func() bool
@@ -49,7 +49,12 @@ type desktopShell struct {
 	more            *morePane
 	currentPolicy   *widget.Label
 	documents       *documentController
-	appearance      *fyne.Container
+	homeState       *widget.Label
+	homeCapture     *widget.Label
+	homeMode        *widget.Label
+	homeInventory   *widget.Label
+	homeSources     *widget.Label
+	homePorts       *widget.Label
 	OnStateChanged  func()
 }
 
@@ -70,7 +75,7 @@ func newDesktopShell(window fyne.Window, service *app.Service, manager *nodeMana
 	shell := &desktopShell{refreshers: map[int]func(){}, store: store, rawConfig: rawConfig != "", running: running}
 	shell.captureLabel = quietLabel("系统代理")
 	shell.connectionLabel = quietLabel("未连接")
-	shell.tunSwitch = widget.NewCheck("启用 TUN 模式", func(enabled bool) {
+	shell.tunSwitch = newToggleSwitch("启用 TUN 模式", func(enabled bool) {
 		if !shell.syncingMode {
 			changeTUN(enabled)
 		}
@@ -81,7 +86,7 @@ func newDesktopShell(window fyne.Window, service *app.Service, manager *nodeMana
 	for i, mode := range modes {
 		labels[i] = mode.Label()
 	}
-	shell.modeSelect = widget.NewRadioGroup(labels, func(label string) {
+	shell.modeSelect = newModeSelector(labels, func(label string) {
 		if shell.syncingMode {
 			return
 		}
@@ -92,8 +97,6 @@ func newDesktopShell(window fyne.Window, service *app.Service, manager *nodeMana
 			}
 		}
 	})
-	shell.modeSelect.Horizontal = true
-	shell.modeSelect.Required = true
 	shell.SetModeEnabled(true)
 	current := wrappedLabel("完整配置模式：节点由指定配置文件管理。")
 	shell.currentPolicy = current
@@ -145,6 +148,9 @@ func newDesktopShell(window fyne.Window, service *app.Service, manager *nodeMana
 	shell.documents.OnStateChanged = func() {
 		shell.configPane.updateStatus()
 		shell.rulesPane.updateButtons()
+		if shell.more != nil {
+			shell.more.ports.updateButtons()
+		}
 		if shell.strategies != nil {
 			shell.strategies.updateButtons()
 		}
@@ -156,27 +162,34 @@ func newDesktopShell(window fyne.Window, service *app.Service, manager *nodeMana
 	}
 
 	shell.more = newMorePane(fyne.CurrentApp().Preferences())
+	shell.more.ports = newPortsPane(shell.documents)
 	shell.more.OnChanged = shell.notifyStateChanged
 	shell.refreshers[pageMore] = shell.more.Refresh
 	shell.pages = []fyne.CanvasObject{homePage, nodePage, policyPage, shell.rulesPane.root, configPage, shell.more.root}
 	shell.content = container.NewStack(homePage)
 	titles := []string{"首页", "节点", "策略", "规则", "配置", "更多"}
 	icons := []fyne.Resource{theme.HomeIcon(), theme.ComputerIcon(), theme.ListIcon(), theme.StorageIcon(), theme.DocumentIcon(), theme.MoreHorizontalIcon()}
-	navigation := container.NewVBox()
-	for index, title := range titles {
+	navigation := container.New(layout.NewCustomPaddedVBoxLayout(2))
+	for _, index := range []int{pageHome, pagePolicy, pageNodes, pageRules, pageConfig, pageMore} {
+		title := titles[index]
 		button := newChoiceButton(title, icons[index], func() { shell.selectPage(index) })
 		button.Alignment = widget.ButtonAlignLeading
-		shell.navigation = append(shell.navigation, button)
-		navigation.Add(container.NewGridWrap(fyne.NewSize(176, 44), button.Button))
+		if len(shell.navigation) == 0 {
+			shell.navigation = make([]*choiceButton, len(titles))
+		}
+		shell.navigation[index] = button
+		navigation.Add(container.NewGridWrap(fyne.NewSize(136, 42),
+			container.NewThemeOverride(button.Button, navigationTheme{fyne.CurrentApp().Settings().Theme()})))
 	}
 	brand := sidebarBrand(shell.connectionLabel)
-	top := container.NewVBox(brand, inset(32, 0, 0, 0, navigation))
-	shell.appearance = container.NewVBox()
-	footer := container.NewVBox(shell.captureLabel, shell.appearance, quietLabel(app.DisplayName+"  /  0.16.15"))
-	shell.sidebarPadding = inset(26, 20, 16, 16, container.NewBorder(top, footer, nil, nil, layout.NewSpacer()))
+	top := container.NewVBox(inset(0, 0, 12, 0, brand), inset(20, 0, 0, 0, navigation))
+	version := quietLabel("v0.16.16")
+	footer := inset(0, 0, 10, 0, version)
+	shell.sidebarPadding = inset(54, 16, 14, 14, container.NewBorder(top, footer, nil, nil, layout.NewSpacer()))
 	sidebar := container.NewStack(themedSurface(colorSidebar, 0), shell.sidebarPadding)
 	shell.sidebar = sidebar
-	shell.root = container.NewBorder(nil, nil, sidebar, nil, inset(8, 16, 20, 20, shell.content))
+	main := container.NewStack(themedSurface(colorContent, 0), inset(0, 16, 0, 16, shell.content))
+	shell.root = container.NewBorder(nil, nil, sidebar, nil, main)
 	shell.selectPage(0)
 	return shell
 }
@@ -223,6 +236,7 @@ func loadPolicy(store profile.Store, rawConfig string) (map[string]any, error) {
 
 func (s *desktopShell) SyncMode() {
 	defer s.notifyStateChanged()
+	defer s.refreshHomeSummary()
 	if s.running() {
 		s.connectionLabel.SetText("已连接")
 		s.connectionLabel.Importance = widget.SuccessImportance
@@ -261,6 +275,7 @@ func (s *desktopShell) SyncMode() {
 func (s *desktopShell) SetModeEnabled(enabled bool) {
 	defer s.notifyStateChanged()
 	if s.more != nil {
+		s.more.ports.SetAvailable(enabled)
 		s.more.routing.SetAvailable(enabled)
 		s.more.benchmark.SetAvailable(enabled)
 	}

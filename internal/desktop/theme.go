@@ -8,19 +8,31 @@ import (
 )
 
 const (
-	colorPanel       fyne.ThemeColorName = "loop.panel"
-	colorSidebar     fyne.ThemeColorName = "loop.sidebar"
-	colorOrange      fyne.ThemeColorName = "loop.orange"
-	colorSecondary   fyne.ThemeColorName = "loop.secondary"
-	colorAccent      fyne.ThemeColorName = "loop.accent"
-	colorRuleCard    fyne.ThemeColorName = "loop.rule-card"
-	colorBadgeDirect fyne.ThemeColorName = "loop.badge-direct"
-	colorBadgeProxy  fyne.ThemeColorName = "loop.badge-proxy"
-	colorBadgeReject fyne.ThemeColorName = "loop.badge-reject"
-	colorBadgeMuted  fyne.ThemeColorName = "loop.badge-muted"
-	appearanceSystem                     = "system"
-	appearanceLight                      = "light"
-	appearanceDark                       = "dark"
+	colorPanel           fyne.ThemeColorName = "loop.panel"
+	colorMemberCard      fyne.ThemeColorName = "loop.member-card"
+	colorMemberSelected  fyne.ThemeColorName = "loop.member-selected"
+	colorMemberBadge     fyne.ThemeColorName = "loop.member-badge"
+	colorContent         fyne.ThemeColorName = "loop.content"
+	colorSegment         fyne.ThemeColorName = "loop.segment"
+	colorSwitch          fyne.ThemeColorName = "loop.switch"
+	colorSwitchThumb     fyne.ThemeColorName = "loop.switch-thumb"
+	sizeMemberName       fyne.ThemeSizeName  = "loop.member-name"
+	sizeMemberDetail     fyne.ThemeSizeName  = "loop.member-detail"
+	sizeDashboardValue   fyne.ThemeSizeName  = "loop.dashboard-value"
+	sizeDashboardPolicy  fyne.ThemeSizeName  = "loop.dashboard-policy"
+	colorSidebar         fyne.ThemeColorName = "loop.sidebar"
+	colorOrange          fyne.ThemeColorName = "loop.orange"
+	colorSecondary       fyne.ThemeColorName = "loop.secondary"
+	colorAccent          fyne.ThemeColorName = "loop.accent"
+	colorBadgeDirect     fyne.ThemeColorName = "loop.badge-direct"
+	colorBadgeDirectText fyne.ThemeColorName = "loop.badge-direct-text"
+	colorBadgeProxy      fyne.ThemeColorName = "loop.badge-proxy"
+	colorBadgeProxyText  fyne.ThemeColorName = "loop.badge-proxy-text"
+	colorBadgeReject     fyne.ThemeColorName = "loop.badge-reject"
+	colorBadgeMuted      fyne.ThemeColorName = "loop.badge-muted"
+	appearanceSystem                         = "system"
+	appearanceLight                          = "light"
+	appearanceDark                           = "dark"
 )
 
 type clientPalette struct {
@@ -34,17 +46,17 @@ func rgb(r, g, b uint8) color.NRGBA { return color.NRGBA{R: r, G: g, B: b, A: 25
 func palette(variant fyne.ThemeVariant) clientPalette {
 	if variant == theme.VariantDark {
 		return clientPalette{
-			background: rgb(24, 27, 34), panel: rgb(34, 38, 47), sidebar: rgb(28, 32, 40), popup: rgb(43, 48, 59),
-			text: rgb(232, 236, 243), secondary: rgb(155, 165, 183), primary: rgb(50, 109, 225), accent: rgb(131, 176, 255), selection: rgb(42, 62, 96),
-			orange: rgb(246, 180, 111), button: rgb(47, 53, 65),
-			disabledButton: rgb(41, 46, 56), border: rgb(58, 65, 79),
+			background: rgb(42, 44, 45), panel: rgb(30, 32, 33), sidebar: rgb(43, 45, 47), popup: rgb(42, 44, 46),
+			text: rgb(225, 226, 227), secondary: rgb(143, 145, 147), primary: rgb(24, 119, 255), accent: rgb(24, 126, 255), selection: rgb(36, 50, 71),
+			orange: rgb(255, 164, 38), button: rgb(49, 51, 53),
+			disabledButton: rgb(43, 45, 47), border: rgb(58, 60, 62),
 		}
 	}
 	return clientPalette{
-		background: rgb(244, 245, 248), panel: rgb(255, 255, 255), sidebar: rgb(235, 238, 243), popup: rgb(255, 255, 255),
-		text: rgb(42, 49, 63), secondary: rgb(111, 121, 139), primary: rgb(50, 109, 225), accent: rgb(50, 109, 225), selection: rgb(225, 234, 253),
-		orange: rgb(191, 100, 29), button: rgb(240, 243, 248),
-		disabledButton: rgb(241, 243, 246), border: rgb(227, 231, 238),
+		background: rgb(231, 233, 231), panel: rgb(246, 247, 245), sidebar: rgb(231, 233, 232), popup: rgb(248, 249, 247),
+		text: rgb(69, 71, 72), secondary: rgb(124, 127, 128), primary: rgb(0, 122, 255), accent: rgb(0, 122, 255), selection: rgb(211, 222, 235),
+		orange: rgb(230, 145, 20), button: rgb(236, 238, 235),
+		disabledButton: rgb(226, 228, 226), border: rgb(214, 217, 215),
 	}
 }
 
@@ -54,6 +66,7 @@ type clientTheme struct {
 	fyne.Theme
 	mode  string
 	fonts *systemFonts
+	glass bool // Enabled only by a platform adapter with a native backdrop.
 }
 
 func newClientTheme() *clientTheme {
@@ -77,23 +90,57 @@ func (t *clientTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant)
 	switch name {
 	case theme.ColorNameBackground:
 		return p.background
-	case colorPanel:
-		return p.panel
-	case colorRuleCard:
-		if variant == theme.VariantDark {
-			return rgb(28, 32, 40)
+	case colorContent:
+		if t.glass {
+			p.background.A = 20
+			if variant == theme.VariantDark {
+				p.background.A = 180
+			}
 		}
-		return rgb(248, 249, 252)
+		return p.background
+	case colorPanel:
+		if t.glass {
+			p.panel.A = 148
+			if variant == theme.VariantDark {
+				p.panel.A = 180
+			}
+		}
+		return p.panel
+	case colorMemberCard:
+		if variant == theme.VariantDark {
+			return color.NRGBA{R: 23, G: 25, B: 26, A: 72}
+		}
+		return color.NRGBA{R: 255, G: 255, B: 255, A: 90}
+	case colorMemberSelected:
+		if variant == theme.VariantDark {
+			return rgb(33, 44, 55)
+		}
+		return rgb(217, 229, 242)
+	case colorMemberBadge:
+		if variant == theme.VariantDark {
+			return rgb(27, 46, 67)
+		}
+		return rgb(220, 235, 252)
 	case colorBadgeDirect:
 		if variant == theme.VariantDark {
 			return rgb(32, 59, 49)
 		}
 		return rgb(226, 243, 233)
+	case colorBadgeDirectText:
+		if variant == theme.VariantDark {
+			return rgb(32, 163, 105)
+		}
+		return rgb(17, 126, 75)
 	case colorBadgeProxy:
 		if variant == theme.VariantDark {
 			return rgb(64, 48, 35)
 		}
 		return rgb(251, 237, 222)
+	case colorBadgeProxyText:
+		if variant == theme.VariantDark {
+			return p.orange
+		}
+		return rgb(163, 92, 6)
 	case colorBadgeReject:
 		if variant == theme.VariantDark {
 			return rgb(65, 35, 40)
@@ -104,7 +151,28 @@ func (t *clientTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant)
 	case theme.ColorNameMenuBackground, theme.ColorNameOverlayBackground:
 		return p.popup
 	case colorSidebar:
+		if t.glass {
+			p.sidebar.A = 24
+			if variant == theme.VariantDark {
+				p.sidebar.A = 180
+			}
+		}
 		return p.sidebar
+	case colorSegment:
+		if variant == theme.VariantDark {
+			return color.NRGBA{R: 24, G: 26, B: 26, A: 130}
+		}
+		return color.NRGBA{R: 255, G: 255, B: 251, A: 125}
+	case colorSwitch:
+		if variant == theme.VariantDark {
+			return rgb(70, 73, 74)
+		}
+		return rgb(196, 199, 198)
+	case colorSwitchThumb:
+		if variant == theme.VariantDark {
+			return rgb(200, 202, 203)
+		}
+		return rgb(255, 255, 255)
 	case colorOrange:
 		return p.orange
 	case colorSecondary:
@@ -138,6 +206,34 @@ func (t *clientTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant)
 		return color.NRGBA{R: p.secondary.R, G: p.secondary.G, B: p.secondary.B, A: 130}
 	}
 	return t.Theme.Color(name, variant)
+}
+
+func (t *clientTheme) Size(name fyne.ThemeSizeName) float32 {
+	switch name {
+	case theme.SizeNameText:
+		return 13
+	case theme.SizeNameCaptionText:
+		return 11
+	case theme.SizeNameHeadingText:
+		return 22
+	case theme.SizeNameSubHeadingText:
+		return 17
+	case sizeMemberName:
+		return 12
+	case sizeMemberDetail:
+		return 10
+	case sizeDashboardValue:
+		return 28
+	case sizeDashboardPolicy:
+		return 18
+	case theme.SizeNameButtonRadius, theme.SizeNameInputRadius:
+		return 8
+	case theme.SizeNameCardRadius:
+		return 20
+	case theme.SizeNameSelectionRadius:
+		return 10
+	}
+	return t.Theme.Size(name)
 }
 
 func (t *clientTheme) Font(style fyne.TextStyle) fyne.Resource {

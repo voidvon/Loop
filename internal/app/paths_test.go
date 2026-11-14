@@ -40,7 +40,7 @@ func TestAppUpdateMigratesUserSourcesBeforeSeedingDefaultMain(t *testing.T) {
 	os.MkdirAll(bundled, 0700)
 	os.MkdirAll(target, 0700)
 	os.WriteFile(filepath.Join(bundled, "config.json"), []byte(`{"route":{"final":"proxy"}}`), 0600)
-	os.WriteFile(filepath.Join(target, "base.json"), []byte(`{"log":{"level":"debug"},"inbounds":[]}`), 0600)
+	os.WriteFile(filepath.Join(target, "base.json"), []byte(`{"log":{"level":"debug"},"proxy_ports":{"default":2080,"global":2081,"global_enabled":false}}`), 0600)
 	os.WriteFile(filepath.Join(target, "routing.json"), []byte(`{"route":{"final":"direct"}}`), 0600)
 	dir, err := ProfileDirectory(executable, state, "")
 	if err != nil {

@@ -45,13 +45,10 @@ func TestLivePolicyEditsApplyAndRecoverInAllModes(t *testing.T) {
 					backend.failures = []error{errors.New("synthetic start failed"), nil}
 				}
 				result, err := service.SavePolicies(context.Background(), backend, policyEditDraft(t, before), before, true)
-				wantError := fail && mode != profile.ModeDirect
+				wantError := fail
 				starts := 1
 				if fail {
 					starts = 2
-				}
-				if mode == profile.ModeDirect {
-					starts = 0
 				}
 				if !result.Running || (err != nil) != wantError || len(backend.starts) != starts {
 					t.Fatal(result.Running, err, len(backend.starts))
@@ -131,7 +128,7 @@ func TestPolicyEditPreflightAndImplicitChoicePreservation(t *testing.T) {
 func TestBuiltinStrategyUsesNativeCoreAndRoutingDiagnostics(t *testing.T) {
 	s, core := testutil.CoreStore(t)
 	config := map[string]any{
-		"inbounds":      []any{map[string]any{"type": "mixed", "tag": "mixed-in", "listen": "127.0.0.1", "listen_port": 2080}},
+		"proxy_ports":   map[string]any{"default": 2080, "global": 2081, "global_enabled": false},
 		"route":         map[string]any{"final": "Nested"},
 		"policy_groups": []profile.PolicyGroup{{Name: profile.DefaultPolicy, AllNodes: true}, {Name: "Custom", Builtins: []string{"direct", "reject"}}, {Name: "Nested", Groups: []string{"Custom"}}},
 	}
@@ -266,7 +263,7 @@ func TestDeletingAvailableRespectsLiveGlobalDependencies(t *testing.T) {
 	for _, mode := range []profile.Mode{profile.ModeRule, profile.ModeGlobal} {
 		t.Run(string(mode), func(t *testing.T) {
 			s, core := testutil.CoreStore(t)
-			config := map[string]any{"inbounds": []any{map[string]any{"type": "mixed", "listen": "127.0.0.1", "listen_port": 2080}}, "route": map[string]any{"final": "direct"}, "policy_groups": []profile.PolicyGroup{{Name: profile.DefaultPolicy, Builtins: []string{"direct"}}, {Name: "Other", Builtins: []string{"direct"}}}}
+			config := map[string]any{"proxy_ports": map[string]any{"default": 2080, "global": 2081, "global_enabled": false}, "route": map[string]any{"final": "direct"}, "policy_groups": []profile.PolicyGroup{{Name: profile.DefaultPolicy, Builtins: []string{"direct"}}, {Name: "Other", Builtins: []string{"direct"}}}}
 			path := filepath.Join(s.Dir, profile.MainConfigName)
 			if err := profile.WriteJSON(path, config); err != nil {
 				t.Fatal(err)

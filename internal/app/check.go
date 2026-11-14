@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
 
+	"local/loop/internal/inbound"
 	"local/loop/internal/profile"
 	"local/loop/internal/proxy"
 )
@@ -39,15 +39,14 @@ func checkConnection(core, config string) error {
 	if proxy.HasTUN(data) {
 		return errors.New("-check-connection 不启动 TUN，请在首页启动以完成系统授权")
 	}
-	address, err := proxy.LocalAddress(data)
+	endpoints, err := inbound.Parse(data)
 	if err != nil {
 		return err
 	}
-	listener, err := net.Listen("tcp", address)
-	if err != nil {
-		return fmt.Errorf("检查端口 %s: %w", address, err)
+	address := endpoints.Default
+	if err := inbound.CheckAvailable(endpoints.Addresses()); err != nil {
+		return err
 	}
-	listener.Close()
 	state, err := os.MkdirTemp("", "loop-core-check-*")
 	if err != nil {
 		return err

@@ -49,6 +49,7 @@ type LatencyValue struct {
 type OperationResult struct {
 	Document  []byte                `json:"document,omitempty"`
 	Rules     RuleSaveResult        `json:"rules"`
+	Ports     DocumentSaveResult    `json:"ports"`
 	Policies  DocumentSaveResult    `json:"policies"`
 	Latencies []LatencyValue        `json:"latencies,omitempty"`
 	Routing   proxy.RoutingResult   `json:"routing,omitempty"`

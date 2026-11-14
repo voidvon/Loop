@@ -4,6 +4,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+
+	"local/loop/internal/inbound"
 )
 
 type Mode string
@@ -32,11 +34,11 @@ func (m Mode) Label() string {
 func (m Mode) Description() string {
 	switch m {
 	case ModeDirect:
-		return "所有进入本软件的流量直连，不使用代理节点。"
+		return "默认入口与 TUN 流量直连；独立全局入口仍使用默认代理策略。"
 	case ModeRule:
-		return "按已保存的分流规则处理流量，默认国内直连、其他代理。"
+		return "默认入口与 TUN 按已保存的分流规则处理流量。"
 	case ModeGlobal:
-		return "局域网保持直连，其余进入本软件的流量均使用已设置的默认策略。"
+		return "默认入口与 TUN 使用默认代理策略，局域网保持直连。"
 	default:
 		return "请重新选择分流模式。"
 	}
@@ -100,9 +102,13 @@ func (s Store) compileMode(mode Mode) (map[string]any, error) {
 	if !mode.Valid() {
 		return nil, errors.New("不支持的分流模式")
 	}
-	// Candidate compilation validates policy structure without requiring a selected node.
+	ports, err := s.ProxyPorts()
+	if err != nil {
+		return nil, err
+	}
+	needsProxy := mode != ModeDirect || ports.GlobalEnabled
 	var candidate *Node
-	if mode != ModeDirect {
+	if needsProxy {
 		candidate = &Node{ID: "policy-check", Outbound: map[string]any{"type": "socks", "server": "127.0.0.1", "server_port": 9}}
 	}
 	config, err := s.compileNode(candidate)
@@ -113,24 +119,24 @@ func (s Store) compileMode(mode Mode) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if mode == ModeGlobal && defaultPolicy == "" {
-		return nil, errors.New("未设置全局代理默认策略，请在策略页选择一个组并点击设为默认")
+	if (mode == ModeGlobal || ports.GlobalEnabled) && defaultPolicy == "" {
+		return nil, errors.New("未设置全局代理默认策略，请在策略页设置")
 	}
-	if mode != ModeDirect {
-		// Global mode uses the configured default, independently of saved rules.
-		if mode == ModeGlobal {
-			config["route"] = map[string]any{"final": defaultPolicy}
-			delete(config, "dns")
-			delete(config, "http_clients")
-		}
-		config, err = s.compileStrategies(config)
-		if err != nil {
+	if mode != ModeRule {
+		applyModeRouting(config, mode, defaultPolicy)
+	}
+	if ports.GlobalEnabled {
+		if err := applyGlobalPort(config, defaultPolicy); err != nil {
 			return nil, err
 		}
 	}
-	if mode == ModeRule {
-		return config, nil
+	if needsProxy {
+		return s.compileStrategies(config)
 	}
+	return config, nil
+}
+
+func applyModeRouting(config map[string]any, mode Mode, defaultPolicy string) {
 	route := config["route"].(map[string]any)
 	delete(route, "rule_set")
 	delete(config, "http_clients")
@@ -154,5 +160,41 @@ func (s Store) compileMode(mode Mode) (map[string]any, error) {
 		dns["final"] = "dns-proxy"
 	}
 	config["dns"] = dns
-	return config, nil
+}
+
+// Global-port rules precede saved rules and are always scoped to their inbound.
+// Its DNS transports and caches are separate from the default inlet's DNS policy.
+func applyGlobalPort(config map[string]any, policy string) error {
+	const proxyDNS = "loop-global-dns"
+	const localDNS = "loop-global-local"
+	localDomains := []string{"lan", "local", "localhost"}
+	dns, _ := config["dns"].(map[string]any)
+	if dns == nil {
+		dns = map[string]any{}
+		config["dns"] = dns
+	}
+	servers, _ := dns["servers"].([]any)
+	for _, item := range servers {
+		server, _ := item.(map[string]any)
+		if server["tag"] == proxyDNS || server["tag"] == localDNS {
+			return errors.New("DNS 标识 loop-global-dns / loop-global-local 由全局代理入口保留")
+		}
+	}
+	dns["servers"] = append(servers,
+		map[string]any{"type": "local", "tag": localDNS},
+		map[string]any{"type": "https", "tag": proxyDNS, "server": "1.1.1.1", "detour": policy})
+	dnsRules, _ := dns["rules"].([]any)
+	dns["rules"] = append([]any{
+		map[string]any{"inbound": inbound.GlobalTag, "domain_suffix": localDomains, "action": "route", "server": localDNS},
+		map[string]any{"inbound": inbound.GlobalTag, "action": "route", "server": proxyDNS},
+	}, dnsRules...)
+	route := config["route"].(map[string]any)
+	rules, _ := route["rules"].([]any)
+	route["rules"] = append([]any{
+		map[string]any{"inbound": inbound.GlobalTag, "domain_suffix": localDomains, "action": "route", "outbound": "direct"},
+		map[string]any{"inbound": inbound.GlobalTag, "action": "resolve", "server": proxyDNS},
+		map[string]any{"inbound": inbound.GlobalTag, "ip_is_private": true, "action": "route", "outbound": "direct"},
+		map[string]any{"inbound": inbound.GlobalTag, "action": "route", "outbound": policy},
+	}, rules...)
+	return nil
 }

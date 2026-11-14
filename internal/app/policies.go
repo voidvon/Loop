@@ -35,7 +35,13 @@ func SwitchStrategy(ctx context.Context, backend proxy.Backend, store profile.St
 		return true, errors.Join(err, rollback())
 	}
 	if mode, _ := store.Mode(); mode == profile.ModeDirect {
-		return true, nil
+		ports, err := store.ProxyPorts()
+		if err != nil {
+			return true, errors.Join(err, rollback())
+		}
+		if !ports.GlobalEnabled {
+			return true, nil
+		}
 	}
 	start := func() error {
 		startCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
@@ -70,5 +76,5 @@ func (s *Service) SavePolicies(ctx context.Context, backend proxy.Backend, draft
 	if err := s.Store.ValidatePolicyEdit(draft, expected); err != nil {
 		return DocumentSaveResult{Running: running}, err
 	}
-	return s.saveLiveDocument(ctx, backend, draft, expected, running, false)
+	return s.saveLiveDocument(ctx, backend, draft, expected, running, policiesImpact)
 }

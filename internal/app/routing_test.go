@@ -27,9 +27,9 @@ func TestRoutingUsesSavedModeAndNamesWithoutWritingProfiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	config := map[string]any{
-		"inbounds": []any{map[string]any{"type": "mixed", "tag": "mixed-in", "listen": "127.0.0.1", "listen_port": 2080}},
-		"dns":      map[string]any{"servers": []any{map[string]any{"type": "local", "tag": "local"}}, "final": "local"},
-		"route":    map[string]any{"final": "Available", "default_domain_resolver": "local"},
+		"proxy_ports": map[string]any{"default": 2080, "global": 2081, "global_enabled": false},
+		"dns":         map[string]any{"servers": []any{map[string]any{"type": "local", "tag": "local"}}, "final": "local"},
+		"route":       map[string]any{"final": "Available", "default_domain_resolver": "local"},
 	}
 	if err := profile.WriteJSON(filepath.Join(s.Dir, profile.MainConfigName), config); err != nil {
 		t.Fatal(err)
@@ -58,6 +58,8 @@ func TestRoutingUsesSavedModeAndNamesWithoutWritingProfiles(t *testing.T) {
 		}
 	}
 	// Complete-config callers need neither a node store nor a selected policy.
+	delete(config, "proxy_ports")
+	config["inbounds"] = []any{map[string]any{"type": "mixed", "tag": "mixed-in", "listen": "127.0.0.1", "listen_port": 2080}}
 	config["outbounds"] = []any{map[string]any{"type": "direct", "tag": "my-direct"}}
 	config["route"].(map[string]any)["final"] = "my-direct"
 	data, _ := json.Marshal(config)

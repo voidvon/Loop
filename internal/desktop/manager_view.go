@@ -2,35 +2,36 @@ package desktop
 
 import (
 	"fmt"
+	"image/color"
+	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	"local/loop/internal/profile"
 )
 
 func (m *nodeManager) buildView() {
 	m.summary = quietLabel("")
 	m.summary.Wrapping = fyne.TextWrapOff
-	m.sourceHeader = newSectionHeader("", "", theme.NewColoredResource(theme.ComputerIcon(), colorAccent), nil)
-	m.localSource = newChoiceButton("本地节点", theme.ComputerIcon(), func() { m.selectSource(0) })
+	m.sourceHeader = newSectionHeader("", "", theme.NewColoredResource(iconLocalNodes, colorAccent), nil)
+	m.localSource = newChoiceButton("本地节点", theme.NewColoredResource(iconLocalNodes, colorAccent), func() { m.selectSource(0) })
 	m.localSource.Alignment = widget.ButtonAlignLeading
 	m.emptySources = quietLabel("尚未添加订阅\n点击右上角 + 添加")
 	m.emptySources.Wrapping = fyne.TextWrapOff
 	m.emptySources.Alignment = fyne.TextAlignCenter
 	sources := container.NewStack(m.subscriptions, container.NewCenter(m.emptySources))
-	left := panel(container.NewBorder(
-		container.NewVBox(m.localSource.Button, inset(22, 8, 6, 0, quietLabel("订阅节点"))),
-		nil, nil, nil, sources))
+	left := collectionSidebar(inset(4, 4, 0, 0, container.NewBorder(
+		container.NewVBox(container.NewThemeOverride(m.localSource.Button, nodeSourceTheme{fyne.CurrentApp().Settings().Theme()}), inset(18, 8, 6, 0, quietLabel("订阅节点"))),
+		nil, nil, nil, sources)))
 	m.emptyNodes = widget.NewLabelWithStyle("", fyne.TextAlignCenter, fyne.TextStyle{})
-	list := container.NewStack(m.nodes, container.NewCenter(m.emptyNodes))
-	right := panel(container.NewBorder(inset(0, 12, 0, 0, m.sourceHeader), inset(12, 0, 0, 0, m.message), nil, nil, list))
+	list := container.NewStack(collectionGrid(m.nodes, 12, 16, colorMemberSelected), container.NewCenter(m.emptyNodes))
+	right := collectionDetail(container.NewBorder(inset(0, 12, 0, 0, m.sourceHeader), inset(12, 0, 0, 0, m.message), nil, nil, list))
 	m.add = widget.NewButtonWithIcon("", theme.ContentAddIcon(), m.addSource)
-	title := widget.NewLabelWithStyle("节点", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	title.SizeName = theme.SizeNameHeadingText
-	heading := inset(0, 16, 0, 0, container.NewBorder(nil, nil, nil, container.NewCenter(m.add), container.NewHBox(title, container.NewCenter(m.summary))))
-	columns := container.New(nodeColumnsLayout{leftWidth: 238}, left, right)
+	heading := collectionPageHeader("节点", m.summary, collectionAction(m.add, colorAccent))
+	columns := collectionColumns(left, right)
 	m.root = container.NewBorder(heading, nil, nil, nil, columns)
 }
 
@@ -102,6 +103,43 @@ func (m *nodeManager) refreshSourceDetails() {
 		m.emptyNodes.Hide()
 		m.nodes.Show()
 	}
+}
+
+type nodeSourceTheme struct{ fyne.Theme }
+
+func (t nodeSourceTheme) Size(n fyne.ThemeSizeName) float32 {
+	if n == theme.SizeNameInnerPadding {
+		return 6
+	}
+	return (navigationTheme{t.Theme}).Size(n)
+}
+func (t nodeSourceTheme) Color(n fyne.ThemeColorName, v fyne.ThemeVariant) color.Color {
+	switch n {
+	case theme.ColorNamePrimary:
+		return t.Theme.Color(colorMemberSelected, v)
+	case theme.ColorNameForegroundOnPrimary:
+		return t.Theme.Color(theme.ColorNameForeground, v)
+	}
+	return t.Theme.Color(n, v)
+}
+
+var iconLocalNodes = outlineIcon("local-nodes", `<rect x="5" y="3" width="14" height="12" rx="3"/><path d="M5 9h14M8 6h8M9 12h6M12 15v5M5 21h14"/>`)
+
+func nodeCardDetails(node profile.Node) (string, fyne.Resource) {
+	kind, _ := node.Outbound["type"].(string)
+	icon := iconGlobe
+	switch kind {
+	case "direct":
+		kind, icon = "Direct", iconArrow
+	case "block":
+		kind, icon = "Reject", iconReject
+	default:
+		kind = strings.ToUpper(kind)
+	}
+	if kind == "" {
+		kind = "节点"
+	}
+	return kind, theme.NewColoredResource(icon, colorAccent)
 }
 
 // Keep the source list steady while letting the node list take extra space.

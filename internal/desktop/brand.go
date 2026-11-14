@@ -11,13 +11,13 @@ import (
 )
 
 func sidebarBrand(status *widget.Label) fyne.CanvasObject {
-	icon := canvas.NewImageFromResource(theme.NewColoredResource(theme.ComputerIcon(), colorAccent))
+	icon := canvas.NewImageFromResource(theme.NewColoredResource(iconLoop, colorSecondary))
 	icon.FillMode = canvas.ImageFillContain
-	icon.SetMinSize(fyne.NewSize(36, 36))
-	name := sectionTitle(app.DisplayName)
+	icon.SetMinSize(fyne.NewSize(28, 34))
+	name := dashboardValue(app.DisplayName, theme.SizeNameText)
 	name.Wrapping = fyne.TextWrapOff
-	status.SizeName = theme.SizeNameText
+	status.SizeName = theme.SizeNameCaptionText
 	status.Wrapping = fyne.TextWrapOff
 	text := newTitleDetail(name, status)
-	return container.New(layout.NewCustomPaddedHBoxLayout(12), container.NewCenter(icon), container.NewCenter(text))
+	return container.New(layout.NewCustomPaddedHBoxLayout(10), container.NewCenter(icon), container.NewCenter(text))
 }

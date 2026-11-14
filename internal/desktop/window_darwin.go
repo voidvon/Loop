@@ -10,6 +10,7 @@ void loopWindowConfigure(uintptr_t handle, double headerHeight, double controlsW
 void loopWindowMinimize(uintptr_t handle);
 void loopWindowZoom(uintptr_t handle);
 void loopWindowCleanup(uintptr_t handle);
+void loopWindowAppearance(uintptr_t handle, int mode);
 void loopAppInstallQuit(void);
 void loopAppRestoreQuit(void);
 */
@@ -66,6 +67,27 @@ func newAppWindow(a fyne.App) fyne.Window {
 	return a.NewWindow("Loop")
 }
 
+func prepareWindowSurface(w fyne.Window) bool {
+	if _, ok := w.(driver.NativeWindow); !ok {
+		return false
+	}
+	if surface, ok := w.Canvas().(driver.TransparentCanvas); ok {
+		surface.SetTransparent(true)
+		return true
+	}
+	return false
+}
+
+func refreshWindowAppearance(w fyne.Window, mode string) {
+	nativeMode := C.int(0)
+	if mode == appearanceLight {
+		nativeMode = 1
+	} else if mode == appearanceDark {
+		nativeMode = 2
+	}
+	withMacWindow(w, func(handle C.uintptr_t) { C.loopWindowAppearance(handle, nativeMode) })
+}
+
 // Fyne owns the window; native operations use its public NativeWindow API and
 // are dispatched to Cocoa's main queue, never to an arbitrary key window.
 func withMacWindow(w fyne.Window, action func(C.uintptr_t)) {
@@ -84,7 +106,7 @@ func decorateWindow(w fyne.Window, shell *desktopShell, requestClose func()) {
 		return
 	}
 	w.SetPadded(false)
-	shell.sidebarPadding.Layout = layout.NewCustomPaddedLayout(windowHeaderHeight+6, 16, 16, 16)
+	shell.sidebarPadding.Layout = layout.NewCustomPaddedLayout(windowHeaderHeight+6, 16, 14, 14)
 	shell.sidebarPadding.Refresh()
 	sidebarWidth := shell.sidebar.MinSize().Width
 	header := newWindowHeader(windowActions{

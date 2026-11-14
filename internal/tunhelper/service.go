@@ -16,7 +16,7 @@ import (
 
 // Bump when the installed privileged implementation must be upgraded. Ordinary
 // UI releases keep this version, so they don't require another installation.
-const ServiceProtocol = 1
+const ServiceProtocol = 2
 const ServiceLabel = "local.loop.tun"
 const ServiceSocket = "/var/run/local.loop.tun.sock"
 const ServiceDirectory = "/Library/Application Support/LoopTUN"

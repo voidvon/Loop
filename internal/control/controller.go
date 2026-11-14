@@ -16,7 +16,7 @@ import (
 	"local/loop/internal/proxy"
 )
 
-const ProtocolVersion = 1
+const ProtocolVersion = 2
 
 var ErrBusy = errors.New("后台正在处理其他操作，请稍后重试")
 
@@ -232,6 +232,9 @@ func (c *Controller) Execute(requestCtx context.Context, request app.Operation) 
 			return result, errors.New("缺少 enabled")
 		}
 		running, err = app.SwitchTUN(ctx, c.backend, s.Store, *request.Enabled, running)
+	case "save_ports":
+		result.Ports, err = s.SaveProxyPorts(ctx, c.backend, request.Data, request.Expected, running)
+		running = result.Ports.Running
 	case "save_policies":
 		result.Policies, err = s.SavePolicies(ctx, c.backend, request.Data, request.Expected, running)
 		running = result.Policies.Running

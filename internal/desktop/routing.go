@@ -40,7 +40,7 @@ func newRoutingPane() *routingPane {
 			p.start()
 		}
 	}
-	p.test = widget.NewButtonWithIcon("开始测试", theme.MediaPlayIcon(), p.start)
+	p.test = widget.NewButtonWithIcon("开始测试", iconSpeed, p.start)
 	p.test.Importance = widget.HighImportance
 	p.status = quietLabel("使用已保存的配置、当前模式和策略选择；代理未开启时也可测试。")
 	p.status.Wrapping = fyne.TextWrapWord
@@ -79,7 +79,7 @@ func (p *routingPane) updateButtons() {
 		setEnabled(p.test, !p.cancelling)
 	} else {
 		p.test.SetText("开始测试")
-		p.test.SetIcon(theme.MediaPlayIcon())
+		p.test.SetIcon(iconSpeed)
 		setEnabled(p.test, p.available && p.runTest != nil)
 	}
 	setEnabled(p.url, !p.probing)

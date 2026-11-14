@@ -20,6 +20,8 @@ type infoRow struct {
 	leadingObject  fyne.CanvasObject
 	trailingObject fyne.CanvasObject
 	content        fyne.CanvasObject
+	detailArea     *fyne.Container
+	detailBadge    *statusBadge
 }
 
 func newListRow(icon fyne.Resource) *infoRow {
@@ -48,7 +50,8 @@ func newInfoRow(titleSize fyne.ThemeSizeName, verticalPadding, horizontalPadding
 		label.Wrapping = fyne.TextWrapOff
 		label.Truncation = fyne.TextTruncateEllipsis
 	}
-	text := newTitleDetail(r.title, r.detail)
+	r.detailArea = container.NewStack(r.detail)
+	text := container.NewThemeOverride(container.New(layout.NewCustomPaddedVBoxLayout(2), r.title, r.detailArea), titleDetailTheme{fyne.CurrentApp().Settings().Theme()})
 	body := container.NewBorder(nil, nil, r.leading, r.trailing, text)
 	r.content = inset(verticalPadding, verticalPadding, horizontalPadding, horizontalPadding, body)
 	r.ExtendBaseWidget(r)
@@ -65,11 +68,20 @@ func (r *infoRow) setText(title, detail string) {
 	r.title.SetText(title)
 	r.detail.SetText(detail)
 	if detail == "" {
-		r.detail.Hide()
+		r.detailArea.Hide()
 	} else {
-		r.detail.Show()
+		r.detailArea.Show()
 	}
 	r.Refresh()
+}
+
+func (r *infoRow) setTargetBadge(text, target string) {
+	if r.detailBadge == nil {
+		r.detailBadge = newStatusBadge(r.detail)
+		r.detailArea.Objects = []fyne.CanvasObject{container.NewHBox(r.detailBadge)}
+	}
+	r.detailBadge.setTarget(text, target)
+	r.detailArea.Refresh()
 }
 
 func (r *infoRow) setIcon(icon fyne.Resource) {

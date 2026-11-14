@@ -97,7 +97,7 @@ func TestSupervisorWithRealCore(t *testing.T) {
 	port := listener.Addr().(*net.TCPAddr).Port
 	listener.Close()
 	config, _ := json.Marshal(map[string]any{
-		"inbounds":  []any{map[string]any{"type": "mixed", "listen": "127.0.0.1", "listen_port": port}},
+		"inbounds":  []any{map[string]any{"type": "mixed", "tag": "mixed-in", "listen": "127.0.0.1", "listen_port": port}},
 		"outbounds": []any{map[string]any{"type": "direct", "tag": "direct"}},
 	})
 	server, client := net.Pipe()

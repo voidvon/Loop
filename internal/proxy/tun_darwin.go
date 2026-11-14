@@ -169,6 +169,8 @@ func (s *tunSession) connect(ctx context.Context, done <-chan struct{}, core str
 	return nil
 }
 
+func (s *tunSession) helperConnected() bool { return s.conn != nil }
+
 func (s *tunSession) stop() {
 	if s.listener != nil {
 		s.listener.Close()

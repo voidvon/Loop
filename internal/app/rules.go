@@ -13,5 +13,5 @@ func (s *Service) SaveRules(ctx context.Context, backend proxy.Backend, draft, e
 		result, err := s.Remote.Execute(ctx, Operation{Action: "save_rules", Data: draft, Expected: expected})
 		return result.Rules, err
 	}
-	return s.saveLiveDocument(ctx, backend, draft, expected, running, true)
+	return s.saveLiveDocument(ctx, backend, draft, expected, running, rulesImpact)
 }

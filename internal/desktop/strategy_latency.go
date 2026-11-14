@@ -7,7 +7,6 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"local/loop/internal/proxy"
@@ -18,8 +17,7 @@ type probeDisplay struct {
 	Result  proxy.LatencyResult
 }
 
-// Fyne recolors SVG fills; use filled paths so the whole gauge follows the theme.
-var latencyIcon = theme.NewThemedResource(fyne.NewStaticResource("latency.svg", []byte(`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M4.22 19.78a11 11 0 1 1 15.56 0l-1.42-1.42a9 9 0 1 0-12.72 0zM11 2h2v4h-2zM3 11h4v2H3zM17 11h4v2h-4zM5.22 6.64l1.42-1.42 2.12 2.12-1.42 1.42zM10.6 13.6 18 6l-4.6 10.4z"/><circle cx="12" cy="15" r="2"/></svg>`)))
+var latencyIcon = iconSpeed
 
 func (p *strategyPane) startLatency() {
 	if p.probing {

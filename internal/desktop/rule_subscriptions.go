@@ -130,7 +130,7 @@ func (p *rulesPane) editRuleSubscription(index int) {
 		}
 	}
 	target := widget.NewSelect(append(append([]string(nil), p.targetLabels...), "拦截"), nil)
-	target.SetSelected(ruleTargetLabel(sub.Target))
+	target.SetSelected(p.targetLabel(sub.Target))
 	if !editableTarget {
 		target.SetOptions([]string{"复杂引用 · 在配置页修改"})
 		target.SetSelectedIndex(0)
@@ -166,7 +166,12 @@ func (p *rulesPane) editRuleSubscription(index int) {
 				return
 			}
 			editor.Hide()
-			p.groups.Select(2)
+			for row, actual := range p.remoteSets {
+				if policyValues(p.routing.RuleSets[actual]["tag"]) == current.Tag {
+					p.groups.Select(row + 2)
+					break
+				}
+			}
 		})
 	})
 	save.Importance = widget.HighImportance

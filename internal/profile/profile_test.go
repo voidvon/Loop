@@ -19,8 +19,8 @@ func testStore(t *testing.T) Store {
 		}
 	}
 	write("config.json", map[string]any{
-		"inbounds": []any{map[string]any{"type": "mixed", "listen": "127.0.0.1", "listen_port": 2080}},
-		"dns":      map[string]any{"servers": []any{map[string]any{"type": "local", "tag": "dns-direct"}}},
+		"proxy_ports": map[string]any{"default": 2080, "global": 2081, "global_enabled": false},
+		"dns":         map[string]any{"servers": []any{map[string]any{"type": "local", "tag": "dns-direct"}}},
 		"route": map[string]any{
 			"final":    "proxy",
 			"rules":    []any{map[string]any{"domain_suffix": []string{"cn"}, "outbound": "direct"}},

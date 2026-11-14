@@ -12,7 +12,7 @@ import (
 	"local/loop/internal/testutil"
 )
 
-func TestStandardModeControlsSyncWithoutChangingConnection(t *testing.T) {
+func TestSegmentedModeControlsSyncWithoutChangingConnection(t *testing.T) {
 	a := test.NewApp()
 	a.Settings().SetTheme(newClientTheme())
 	defer a.Quit()
@@ -29,17 +29,19 @@ func TestStandardModeControlsSyncWithoutChangingConnection(t *testing.T) {
 		t.Fatal("synchronizing controls changed the connection")
 	}
 	selected := shell.modeSelect.Selected
-	items := test.WidgetRenderer(shell.modeSelect).Objects()
+	test.WidgetRenderer(shell.modeSelect)
+	items := shell.modeSelect.buttons
 	shell.SetModeEnabled(false)
-	test.Tap(items[2].(fyne.Tappable))
+	test.Tap(items[2])
+	items[2].TypedKey(&fyne.KeyEvent{Name: fyne.KeySpace})
 	test.Tap(shell.tunSwitch)
 	if shell.modeSelect.Selected != selected || modeChanges != 0 || tunChanges != 0 {
 		t.Fatal("locked controls changed the connection")
 	}
 	shell.SetModeEnabled(true)
-	test.Tap(items[2].(fyne.Tappable))
+	items[2].TypedKey(&fyne.KeyEvent{Name: fyne.KeySpace})
 	if shell.modeSelect.Selected != profile.ModeGlobal.Label() || modeChanges != 1 {
-		t.Fatal("standard radio selection did not request a mode change")
+		t.Fatal("segmented selection did not request a mode change")
 	}
 	shell.SyncMode()
 	if shell.modeSelect.Selected != selected || modeChanges != 1 || tunChanges != 0 {

@@ -19,6 +19,7 @@ const (
 	moreMenuBar
 	moreRouting
 	moreBenchmark
+	morePorts
 )
 
 // Menu-bar preferences affect presentation only and stay outside proxy profiles.
@@ -66,6 +67,7 @@ type morePane struct {
 	startup         *startupPane
 	routing         *routingPane
 	benchmark       *benchmarkPane
+	ports           *portsPane
 	selected        int
 	modeLetter      *widget.Check
 	dimDisconnected *widget.Check
@@ -83,7 +85,7 @@ func newMorePane(prefs fyne.Preferences) *morePane {
 	p.startup = newStartupPane()
 	p.routing = newRoutingPane()
 	p.benchmark = newBenchmarkPane()
-	p.categories = widget.NewList(func() int { return 4 }, func() fyne.CanvasObject {
+	p.categories = widget.NewList(func() int { return 5 }, func() fyne.CanvasObject {
 		return newListRow(theme.ComputerIcon())
 	}, func(id widget.ListItemID, object fyne.CanvasObject) {
 		row := object.(*infoRow)
@@ -97,7 +99,11 @@ func newMorePane(prefs fyne.Preferences) *morePane {
 			icon = theme.NewColoredResource(latencyIcon, theme.ColorNamePrimary)
 		} else if id == moreBenchmark {
 			name, detail = "批量测速", "并发请求与节点对比"
-			icon = theme.NewColoredResource(theme.ListIcon(), theme.ColorNamePrimary)
+			icon = theme.NewColoredResource(iconSpeed, theme.ColorNamePrimary)
+		}
+		if id == morePorts {
+			name, detail = "代理端口", "默认入口与全局代理"
+			icon = theme.NewColoredResource(iconLink, theme.ColorNamePrimary)
 		}
 		row.setText(name, detail)
 		row.setIcon(icon)
@@ -126,7 +132,7 @@ func newMorePane(prefs fyne.Preferences) *morePane {
 }
 
 func (p *morePane) selectCategory(index int) {
-	if index < moreStartup || index > moreBenchmark {
+	if index < moreStartup || index > morePorts {
 		return
 	}
 	p.selected = index
@@ -138,6 +144,9 @@ func (p *morePane) selectCategory(index int) {
 	} else if index == moreBenchmark {
 		page = p.benchmark.root
 	}
+	if index == morePorts && p.ports != nil {
+		page = p.ports.root
+	}
 	p.body.Objects = []fyne.CanvasObject{page}
 	p.body.Refresh()
 	p.Refresh()
@@ -148,6 +157,8 @@ func (p *morePane) Refresh() {
 		p.startup.Refresh()
 	} else if p.selected == moreBenchmark {
 		p.benchmark.Refresh()
+	} else if p.selected == morePorts && p.ports != nil {
+		p.ports.Refresh()
 	}
 }
 

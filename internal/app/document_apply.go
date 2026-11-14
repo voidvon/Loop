@@ -19,7 +19,15 @@ type DocumentSaveResult struct {
 
 type RuleSaveResult = DocumentSaveResult
 
-func (s *Service) saveLiveDocument(ctx context.Context, backend proxy.Backend, draft, expected []byte, running, rulesOnly bool) (DocumentSaveResult, error) {
+type documentImpact int
+
+const (
+	rulesImpact documentImpact = iota
+	policiesImpact
+	portsImpact
+)
+
+func (s *Service) saveLiveDocument(ctx context.Context, backend proxy.Backend, draft, expected []byte, running bool, impact documentImpact) (DocumentSaveResult, error) {
 	result := DocumentSaveResult{Running: running}
 	checkCtx, checkCancel := context.WithTimeout(ctx, 20*time.Second)
 	saved, err := s.SaveDocument(checkCtx, draft, expected)
@@ -37,7 +45,7 @@ func (s *Service) saveLiveDocument(ctx context.Context, backend proxy.Backend, d
 		result.Document = append([]byte(nil), expected...)
 		return nil
 	}
-	if !rulesOnly {
+	if impact == policiesImpact {
 		if err := s.Store.PreservePolicyChoices(expected); err != nil {
 			return result, errors.Join(err, rollback())
 		}
@@ -45,12 +53,19 @@ func (s *Service) saveLiveDocument(ctx context.Context, backend proxy.Backend, d
 	if !running || bytes.Equal(saved, expected) {
 		return result, nil
 	}
-	// Direct mode ignores groups; global mode still uses strategy definitions.
-	// Rule-only edits can skip both override modes.
 	if s.ConfigPath == "" {
 		mode, err := s.Store.Mode()
-		if err == nil && (mode == profile.ModeDirect || (rulesOnly && mode != profile.ModeRule)) {
+		if err == nil && impact == rulesImpact && mode != profile.ModeRule {
 			return result, nil
+		}
+		if err == nil && impact == policiesImpact && mode == profile.ModeDirect {
+			ports, portsErr := s.Store.ProxyPorts()
+			if portsErr != nil {
+				return result, errors.Join(portsErr, rollback())
+			}
+			if !ports.GlobalEnabled {
+				return result, nil
+			}
 		}
 		if err == nil {
 			var config map[string]any

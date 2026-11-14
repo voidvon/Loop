@@ -58,6 +58,8 @@ func Run(options application.Options) error {
 	} else {
 		appearance.fonts = fonts
 	}
+	w := newAppWindow(a)
+	appearance.glass = prepareWindowSurface(w)
 	a.Settings().SetTheme(appearance)
 	// Migrate existing GUI preferences once; thereafter the daemon owns them.
 	if !snapshot.TrayConfigured {
@@ -67,8 +69,7 @@ func Run(options application.Options) error {
 		}
 	}
 	storeMenuBarPreferences(a.Preferences(), snapshot.Tray)
-	w := newAppWindow(a)
-	w.Resize(fyne.NewSize(1120, 760))
+	w.Resize(fyne.NewSize(1000, 710))
 	w.CenterOnScreen()
 	var stopped atomic.Bool
 	closing, localBusy, nodeBusy, documentBusy, routingBusy, benchmarkBusy, online := false, false, false, false, false, false, true
@@ -228,6 +229,9 @@ func Run(options application.Options) error {
 	shell.documents.SaveRules = func(workCtx context.Context, data, expected []byte, _ bool) (application.RuleSaveResult, error) {
 		return service.SaveRules(workCtx, nil, data, expected, false)
 	}
+	shell.documents.SavePorts = func(workCtx context.Context, data, expected []byte, _ bool) (application.DocumentSaveResult, error) {
+		return service.SaveProxyPorts(workCtx, nil, data, expected, false)
+	}
 	shell.documents.SavePolicies = func(workCtx context.Context, data, expected []byte, _ bool) (application.DocumentSaveResult, error) {
 		return service.SavePolicies(workCtx, nil, data, expected, false)
 	}
@@ -252,10 +256,10 @@ func Run(options application.Options) error {
 		prefs := loadMenuBarPreferences(a.Preferences())
 		execute(application.Operation{Action: "set_tray", Tray: &prefs})
 	}
-	shell.appearance.Add(newAppearanceSelect(a, appearance))
 	a.Settings().AddListener(func(fyne.Settings) {
 		if !stopped.Load() {
 			shell.configPane.updateEditorPalette()
+			refreshWindowAppearance(w, appearance.mode)
 		}
 	})
 	defer shell.documents.Close()
@@ -363,6 +367,7 @@ func Run(options application.Options) error {
 	render()
 	w.Show()
 	configureWindow(w, shell.sidebar.MinSize().Width)
+	refreshWindowAppearance(w, appearance.mode)
 	// Font parsing and the first frame use temporary buffers. Reclaim their
 	// pages once startup settles, without adding a recurring GC/CPU cost.
 	reclaimStartup := time.AfterFunc(2*time.Second, debug.FreeOSMemory)

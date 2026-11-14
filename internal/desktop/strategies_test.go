@@ -167,3 +167,47 @@ func strategyMemberIndex(t *testing.T, p *strategyPane, key string) int {
 	t.Fatalf("missing member %s", key)
 	return -1
 }
+
+func TestStrategyCardsUseStableKeysAndKeyboardRespectsLock(t *testing.T) {
+	a := test.NewApp()
+	defer a.Quit()
+	a.Settings().SetTheme(newClientTheme())
+	s := testutil.NewStore(t)
+	if err := s.SaveManual(profile.Node{ID: "b", Name: "A", Outbound: map[string]any{"type": "trojan", "server": "example.org", "server_port": 443, "password": "test"}}); err != nil {
+		t.Fatal(err)
+	}
+	w := a.NewWindow("strategy cards")
+	c := newDocumentController(w, app.NewService(app.Options{Store: s}))
+	defer c.Close()
+	p := newStrategyPane(w, c, widget.NewLabel(""))
+	defer p.Close()
+	w.SetContent(p.root)
+	w.Resize(fyne.NewSize(820, 600))
+	calls := 0
+	want := profile.NodeKey("manual", "b")
+	p.OnSelect = func(group, key string) {
+		calls++
+		if group != profile.DefaultPolicy || key != want {
+			t.Fatalf("card selected wrong stable ID: %s / %s", group, key)
+		}
+		if err := s.SelectStrategy(group, key); err != nil {
+			t.Fatal(err)
+		}
+		p.Refresh()
+	}
+	p.members.Highlight(strategyMemberIndex(t, p, want))
+	p.available = false
+	p.members.TypedKey(&fyne.KeyEvent{Name: fyne.KeySpace})
+	if calls != 0 {
+		t.Fatal("locked card accepted keyboard selection")
+	}
+	p.available = true
+	p.members.TypedKey(&fyne.KeyEvent{Name: fyne.KeySpace})
+	if calls != 1 || p.state().Selected != want {
+		t.Fatal("keyboard did not select the duplicate name by stable key")
+	}
+	p.Refresh()
+	if calls != 1 {
+		t.Fatal("refresh submitted another selection")
+	}
+}

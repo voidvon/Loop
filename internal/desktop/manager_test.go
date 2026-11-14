@@ -211,3 +211,34 @@ func TestNodeSourceRefreshPreservesIDAndFallsBackAfterDeletion(t *testing.T) {
 		t.Fatal("deleted source did not fall back safely")
 	}
 }
+
+func TestNodeGridWrapsAndRecycledCardMenuTargetsCurrentNode(t *testing.T) {
+	m, s := newTestNodeManager(t)
+	defer m.Close()
+	for _, id := range []string{"b", "c", "d"} {
+		if err := s.SaveManual(profile.Node{ID: id, Name: "同名节点", Outbound: map[string]any{"type": "trojan", "server": "example.com", "server_port": 443, "password": "test"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m.refresh()
+	if m.nodes.ColumnCount() != 3 || m.nodes.Length() != 4 {
+		t.Fatalf("expected three columns and four nodes, got %d columns / %d nodes", m.nodes.ColumnCount(), m.nodes.Length())
+	}
+	row := m.nodes.CreateItem().(*managementRow)
+	m.nodes.UpdateItem(0, row)
+	m.nodes.UpdateItem(3, row)
+	want := m.nodeItems[3].ID
+	test.TapSecondary(row)
+	if m.contextMenu == nil {
+		t.Fatal("card did not open its management menu")
+	}
+	test.Tap(m.contextMenu.Items[1].(fyne.Tappable))
+	confirmManagementDeletion(t, m)
+	if m.manualByID(want) != nil || m.manualByID("a") == nil || len(m.nodeItems) != 3 {
+		t.Fatal("recycled card deleted the wrong node")
+	}
+	selection, _ := s.Selection()
+	if selection.Node != "a" {
+		t.Fatal("browsing cards changed the active node")
+	}
+}

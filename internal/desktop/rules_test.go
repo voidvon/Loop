@@ -34,6 +34,92 @@ func (b *rulesApplyTestBackend) Start(context.Context) error {
 }
 func (b *rulesApplyTestBackend) Stop() error { b.stops++; return nil }
 
+func TestFinalSelectionAutosavesAndRestoresOnFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name                      string
+		running, validation, fail bool
+	}{
+		{name: "offline"},
+		{name: "online", running: true},
+		{name: "validation failure", running: true, validation: true},
+		{name: "apply rollback", running: true, fail: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store, core := testutil.CoreStore(t)
+			a := test.NewApp()
+			defer a.Quit()
+			a.Settings().SetTheme(newClientTheme())
+			queue := make(chan func(), 8)
+			fyne.SetCurrentApp(importTestApp{App: a, driver: importTestDriver{Driver: a.Driver(), queue: queue}})
+			w := a.NewWindow("automatic Final")
+			service := app.NewService(app.Options{Store: store, CorePath: core})
+			c := newDocumentController(w, service)
+			defer c.Close()
+			editor := newConfigPane(w, c)
+			editor.Open()
+			defer editor.Close()
+			p := newRulesPane(w, c)
+			c.OnStateChanged = p.updateButtons
+			running, calls := tc.running, 0
+			backend := &rulesApplyTestBackend{failNext: tc.fail}
+			c.Running = func() bool { return running }
+			c.OnApplied = func(result app.DocumentSaveResult) { running = result.Running }
+			c.SaveRules = func(ctx context.Context, data, expected []byte, connected bool) (app.RuleSaveResult, error) {
+				calls++
+				if tc.validation {
+					return app.RuleSaveResult{Running: connected}, errors.New("validation failed")
+				}
+				return service.SaveRules(ctx, backend, data, expected, connected)
+			}
+			w.SetContent(p.root)
+			before := append([]byte(nil), p.baseline...)
+			p.groups.Select(0)
+			p.Refresh()
+			p.final.SetSelected(p.final.Selected)
+			if c.working || calls != 0 {
+				t.Fatal("loading or reselecting Final triggered a save")
+			}
+			p.final.SetSelected(ruleTargetLabel("direct"))
+			if !c.working || !p.final.Disabled() || !p.add.Disabled() {
+				t.Fatal("changing Final did not immediately save and lock the form")
+			}
+			// Even a programmatic change during saving cannot launch another job.
+			p.final.SetSelected(ruleTargetLabel("YouTube"))
+			select {
+			case complete := <-queue:
+				complete()
+			case <-time.After(25 * time.Second):
+				t.Fatal("automatic Final save did not complete")
+			}
+			want := "direct"
+			if tc.validation || tc.fail {
+				want = "Available"
+			}
+			after, err := os.ReadFile(c.path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			routing, err := profile.ReadRoutingRules(after)
+			if err != nil || routing.Final != want || p.final.Selected != ruleTargetLabel(want) || p.routing.Final != want || c.working || p.final.Disabled() || calls != 1 {
+				t.Fatal("automatic save did not synchronize Final and the dropdown", routing.Final, p.final.Selected, calls, err)
+			}
+			if !bytes.Equal(p.baseline, after) || !bytes.Equal(editor.document.baseline, after) || editor.HasDraft() || running != tc.running {
+				t.Fatal("automatic save lost editor or connection state")
+			}
+			if (tc.validation || tc.fail) && !bytes.Equal(before, after) {
+				t.Fatal("failed automatic save replaced the original document")
+			}
+			// A locked form must restore its saved selection without writing.
+			c.HasDraft = func() bool { return true }
+			p.updateButtons()
+			p.final.SetSelected(ruleTargetLabel("Telegram"))
+			if p.final.Selected != ruleTargetLabel(want) || c.working || calls != 1 {
+				t.Fatal("Final overwrote a configuration draft")
+			}
+		})
+	}
+}
+
 func TestRulesCanSaveOnlineAndSynchronizeConnectionAfterRestart(t *testing.T) {
 	for _, fail := range []bool{false, true} {
 		t.Run(map[bool]string{false: "applied", true: "rolled back"}[fail], func(t *testing.T) {

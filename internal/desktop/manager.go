@@ -37,7 +37,8 @@ type nodeManager struct {
 	sourceHeader             *infoRow
 	emptyNodes, emptySources *widget.Label
 	add                      *widget.Button
-	nodes, subscriptions     *widget.List
+	nodes                    *widget.GridWrap
+	subscriptions            *widget.List
 	contextMenu              *widget.PopUpMenu
 }
 
@@ -45,18 +46,22 @@ func newNodeManager(window fyne.Window, service *app.Service) *nodeManager {
 	m := &nodeManager{window: window, store: service.Store, service: service}
 	m.message = quietLabel("右键本地节点或订阅可进行管理。")
 	m.message.Wrapping = fyne.TextWrapWord
-	m.nodes = widget.NewList(func() int { return len(m.nodeItems) }, func() fyne.CanvasObject {
-		return newManagementRow(newListRow(nil))
-	}, func(id widget.ListItemID, object fyne.CanvasObject) {
+	m.nodes = widget.NewGridWrap(func() int { return len(m.nodeItems) }, func() fyne.CanvasObject {
+		return newManagementRow(newMemberCard())
+	}, func(id widget.GridWrapItemID, object fyne.CanvasObject) {
+		if id < 0 || id >= len(m.nodeItems) || m.sourceIndex < 0 || m.sourceIndex >= len(m.sources) {
+			return
+		}
 		node := m.nodeItems[id]
 		row := object.(*managementRow)
-		row.content.(*infoRow).setText(node.Name, strings.ToUpper(fmt.Sprint(node.Outbound["type"]))+"  ·  "+fmt.Sprint(node.Outbound["server"]))
+		kind, icon := nodeCardDetails(node)
+		row.content.(*memberCard).update(node.Name, kind, "--", widget.LowImportance, icon, false)
 		sourceID := m.sources[m.sourceIndex].ID
 		row.onTap = func() { m.nodes.Select(id) }
 		row.onSecondary = func(position fyne.Position) { m.showContextMenu(m.nodeMenu(sourceID, node.ID), position) }
 	})
 	m.subscriptions = widget.NewList(func() int { return max(0, len(m.sources)-1) }, func() fyne.CanvasObject {
-		return newManagementRow(newListRow(theme.NewColoredResource(theme.FolderIcon(), colorAccent)))
+		return newManagementRow(newCollectionRow(theme.NewColoredResource(iconCloud, colorAccent), 20, 7))
 	}, func(id widget.ListItemID, object fyne.CanvasObject) {
 		sub := m.sources[id+1]
 		item := object.(*managementRow)

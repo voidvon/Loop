@@ -43,14 +43,11 @@
       "tag": "rule-download"
     }
   ],
-  "inbounds": [
-    {
-      "listen": "127.0.0.1",
-      "listen_port": 2080,
-      "tag": "mixed-in",
-      "type": "mixed"
-    }
-  ],
+  "proxy_ports": {
+    "default": 2080,
+    "global": 2081,
+    "global_enabled": true
+  },
   "log": {
     "level": "info",
     "timestamp": true

@@ -22,6 +22,44 @@
 
 static char chromeKey;
 
+// The GLFW rendering view remains the input target and OpenGL surface. Put
+// native materials behind it, rather than adding them over the drawn widgets.
+static void loopInstallBackdrop(NSWindow *window, double sidebarWidth) {
+    NSView *renderer = [window.contentView retain];
+    NSRect bounds = renderer.bounds;
+    NSView *host = [[NSView alloc] initWithFrame:bounds];
+    host.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    // Behind-window materials must not overlap: AppKit would otherwise use
+    // the lower material for the entire overlap, hiding the sidebar material.
+    NSVisualEffectView *backdrop = [[NSVisualEffectView alloc] initWithFrame:NSMakeRect(sidebarWidth, 0, MAX(0, bounds.size.width - sidebarWidth), bounds.size.height)];
+    backdrop.wantsLayer = YES;
+    backdrop.material = NSVisualEffectMaterialUnderWindowBackground;
+    backdrop.blendingMode = NSVisualEffectBlendingModeBehindWindow;
+    backdrop.state = NSVisualEffectStateActive;
+    backdrop.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    [host addSubview:backdrop];
+    [backdrop release];
+
+    NSVisualEffectView *sidebar = [[NSVisualEffectView alloc] initWithFrame:NSMakeRect(0, 0, sidebarWidth, bounds.size.height)];
+    sidebar.wantsLayer = YES;
+    sidebar.material = NSVisualEffectMaterialSidebar;
+    sidebar.blendingMode = NSVisualEffectBlendingModeBehindWindow;
+    sidebar.state = NSVisualEffectStateActive;
+    sidebar.autoresizingMask = NSViewHeightSizable;
+    [host addSubview:sidebar];
+    [sidebar release];
+
+    window.opaque = NO;
+    window.backgroundColor = NSColor.clearColor;
+    window.contentView = host;
+    renderer.frame = host.bounds;
+    renderer.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    [host addSubview:renderer];
+    [window makeFirstResponder:renderer];
+    [renderer release];
+    [host release];
+}
+
 void loopWindowConfigure(uintptr_t handle, double headerHeight, double controlsWidth, double sidebarWidth) {
     NSWindow *window = (NSWindow *)handle;
     void (^configure)(void) = ^{
@@ -43,6 +81,7 @@ void loopWindowConfigure(uintptr_t handle, double headerHeight, double controlsW
         window.movableByWindowBackground = NO;
         window.collectionBehavior |= NSWindowCollectionBehaviorFullScreenPrimary;
         [window setFrame:frame display:NO];
+        loopInstallBackdrop(window, sidebarWidth);
 
         LoopWindowChrome *chrome = [[LoopWindowChrome alloc] init];
         __unsafe_unretained NSWindow *target = window;
@@ -61,6 +100,15 @@ void loopWindowConfigure(uintptr_t handle, double headerHeight, double controlsW
     };
     if ([NSThread isMainThread]) configure();
     else dispatch_async(dispatch_get_main_queue(), configure);
+}
+
+void loopWindowAppearance(uintptr_t handle, int mode) {
+    NSWindow *window = (NSWindow *)handle;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        // A nil appearance inherits live system light/dark changes.
+        window.appearance = mode == 1 ? [NSAppearance appearanceNamed:NSAppearanceNameAqua] :
+                            mode == 2 ? [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua] : nil;
+    });
 }
 
 void loopWindowMinimize(uintptr_t handle) {

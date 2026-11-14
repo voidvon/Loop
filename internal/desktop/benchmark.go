@@ -70,7 +70,7 @@ func newBenchmarkPane() *benchmarkPane {
 	p.mode = widget.NewRadioGroup([]string{benchmarkCurrent, benchmarkSelected}, func(string) { p.updateControls() })
 	p.mode.Horizontal, p.mode.Required = true, true
 	p.mode.SetSelected(benchmarkCurrent)
-	p.startButton = widget.NewButtonWithIcon("开始测试", theme.MediaPlayIcon(), p.start)
+	p.startButton = widget.NewButtonWithIcon("开始测试", iconSpeed, p.start)
 	p.startButton.Importance = widget.HighImportance
 	p.status = quietLabel("每个节点单独执行一组请求；点击结果行查看详细统计。")
 	p.status.Wrapping = fyne.TextWrapWord
@@ -85,8 +85,8 @@ func newBenchmarkPane() *benchmarkPane {
 		quietLabel("设置 -z 后忽略 -n；-q 为每个并发任务的请求上限。"),
 	)))
 	settings := container.NewVBox(
-		container.NewBorder(nil, nil, sectionTitle("批量测速"), p.startButton),
-		p.url,
+		sectionTitle("批量测速"),
+		container.NewBorder(nil, nil, nil, p.startButton, p.url),
 		container.NewGridWithColumns(3, field("请求数 -n", p.requests), field("并发数 -c", p.concurrency), field("超时秒 -t", p.timeout)),
 		container.NewBorder(nil, nil, nil, p.picker, p.mode), advanced, p.status, p.progress,
 	)
@@ -165,7 +165,7 @@ func (p *benchmarkPane) updateControls() {
 		setEnabled(p.startButton, !p.cancelling)
 	} else {
 		p.startButton.SetText("开始测试")
-		p.startButton.SetIcon(theme.MediaPlayIcon())
+		p.startButton.SetIcon(iconSpeed)
 		setEnabled(p.startButton, p.available && p.run != nil)
 	}
 }

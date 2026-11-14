@@ -183,13 +183,18 @@ func routingConfig(original map[string]any, port int, password string) (map[stri
 	if config == nil {
 		return nil, errors.New("测试配置为空")
 	}
-	// Preserve the original mixed tag so inbound-based rules continue to match.
+	// Prefer the owned default inlet regardless of order. Full-config debugging
+	// keeps its custom inlet identity for existing inbound-specific rules.
 	tag := "mixed-in"
 	for _, value := range anySlice(config["inbounds"]) {
 		in, _ := value.(map[string]any)
-		if in["type"] == "mixed" {
-			tag, _ = in["tag"].(string)
-			break
+		if in["type"] == "mixed" && in["tag"] != "global-in" {
+			if name, ok := in["tag"].(string); ok {
+				tag = name
+			}
+			if tag == "mixed-in" {
+				break
+			}
 		}
 	}
 	config["inbounds"] = []any{map[string]any{"type": "mixed", "tag": tag, "listen": "127.0.0.1", "listen_port": port,

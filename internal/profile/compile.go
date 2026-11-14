@@ -40,6 +40,21 @@ func (s Store) compileNode(node *Node) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	ports, err := ProxyPorts(base)
+	if err != nil {
+		return nil, err
+	}
+	if ports.GlobalEnabled {
+		policy, err := DefaultPolicyName(base)
+		if err != nil {
+			return nil, err
+		}
+		if policy == "" {
+			return nil, fmt.Errorf("全局代理入口需要默认策略，请先在策略页设置，或关闭全局代理入口")
+		}
+	}
+	delete(base, "proxy_ports")
+	base["inbounds"] = ports.Inbounds()
 	route, ok := base["route"].(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("config.json 必须有 route 对象")

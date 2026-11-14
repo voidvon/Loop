@@ -30,6 +30,20 @@ Changes cover optional resource interfaces in `resource.go`, the painter's
 font cache and text dispatch, and native label truncation in `widget/richtext.go`.
 `go.mod` marks the existing grapheme iterator as a direct dependency.
 
+- The SVG colorizer applies the theme color and opacity to explicit group
+  strokes. Loop's outline icon family uses hollow shapes with inherited strokes,
+  so navigation, selected states and disabled icons stay legible in both themes.
+  A raster test checks stroke recoloring, alpha and the unfilled icon center.
+
+- `driver.TransparentCanvas` is an opt-in desktop framebuffer extension, set
+  before showing a window. GLFW requests a transparent framebuffer only for
+  that canvas, resetting the hint for subsequent ordinary windows. The GL
+  painter clears it to transparent without changing widget theme backgrounds.
+  Desktop OpenGL uses separate alpha blending for these canvases so surface
+  opacity and text coverage reach the native compositor correctly. Loop's macOS
+  adapter supplies the AppKit backdrop; other platforms keep opaque canvases.
+  A native framebuffer test checks half-alpha drawing and hint isolation.
+
 - `SystemFontResource` opts a resource into the macOS CoreText backend using
   its installed PostScript name. Both measuring and RGBA rasterization use
   CoreText; GL and software painters share the same dispatch. PingFang, Menlo,
@@ -82,4 +96,5 @@ Regression checks from the root:
 
 ```sh
 make test
+go test -race fyne.io/fyne/v2/internal/driver/glfw -run TestLoopTransparentFramebuffer
 ```

@@ -18,6 +18,7 @@ import (
 func TestStrategyLatencyLabelsAndCancellationControls(t *testing.T) {
 	a := test.NewApp()
 	defer a.Quit()
+	a.Settings().SetTheme(newClientTheme())
 	w := a.NewWindow("latency")
 	c := newDocumentController(w, app.NewService(app.Options{Store: testutil.NewStore(t)}))
 	p := newStrategyPane(w, c, widget.NewLabel(""))

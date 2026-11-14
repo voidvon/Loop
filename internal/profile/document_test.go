@@ -39,7 +39,7 @@ func TestDocumentSaveValidatesAndBacksUpWithoutTouchingProfiles(t *testing.T) {
 	for _, name := range []string{"nodes.json", "subscriptions.json", "selection.json"} {
 		other[name] = snapshot(t, s, name)
 	}
-	draft := []byte(`{"inbounds":[{"type":"mixed","listen":"127.0.0.1","listen_port":2080}],"dns":{"servers":[{"type":"local","tag":"dns-direct"}]},"route":{"final":"direct","rules":[{"domain_suffix":"example.com","outbound":"proxy"}]}}`)
+	draft := []byte(`{"proxy_ports":{"default":2080,"global":2081,"global_enabled":false},"dns":{"servers":[{"type":"local","tag":"dns-direct"}]},"route":{"final":"direct","rules":[{"domain_suffix":"example.com","outbound":"proxy"}]}}`)
 	check := func(data []byte) error { _, err := s.CompileDocument("config.json", data); return err }
 	saved, err := SaveDocument(path, draft, original, check)
 	if err != nil {

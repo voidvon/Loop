@@ -33,9 +33,9 @@ func newTestStrategyEditor(t *testing.T) (*strategyGroupEditor, profile.Store) {
 		}
 	}
 	config := map[string]any{
-		"inbounds": []any{map[string]any{"type": "mixed", "listen": "127.0.0.1", "listen_port": 2080}},
-		"dns":      map[string]any{"servers": []any{map[string]any{"type": "local", "tag": "dns-direct"}}},
-		"route":    map[string]any{"final": "direct", "default_domain_resolver": "dns-direct"},
+		"proxy_ports": map[string]any{"default": 2080, "global": 2081, "global_enabled": false},
+		"dns":         map[string]any{"servers": []any{map[string]any{"type": "local", "tag": "dns-direct"}}},
+		"route":       map[string]any{"final": "direct", "default_domain_resolver": "dns-direct"},
 		"policy_groups": []profile.PolicyGroup{
 			{Name: profile.DefaultPolicy, AllNodes: true},
 			{Name: "Custom", AllNodes: true, Filter: "(?i)HK", Builtins: []string{"reject", "direct"}, Groups: []string{profile.DefaultPolicy}, Sources: []string{"one"}, Nodes: []string{profile.NodeKey("manual", "a"), profile.NodeKey("one", "a")}},

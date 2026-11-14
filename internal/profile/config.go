@@ -31,7 +31,7 @@ func parseConfig(data []byte) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := onlyKeys(config, MainConfigName, "log", "inbounds", "experimental", "route", "dns", "http_clients", "policy_groups", "default_policy"); err != nil {
+	if err := onlyKeys(config, MainConfigName, "log", "proxy_ports", "experimental", "route", "dns", "http_clients", "policy_groups", "default_policy"); err != nil {
 		return nil, err
 	}
 	return config, nil
@@ -43,7 +43,7 @@ func (s Store) legacyConfig() (map[string]any, error) {
 		name string
 		keys []string
 	}{
-		{"base.json", []string{"log", "inbounds", "experimental"}},
+		{"base.json", []string{"log", "proxy_ports", "experimental"}},
 		{"routing.json", []string{"route", "dns", "http_clients"}},
 	} {
 		data, err := os.ReadFile(filepath.Join(s.Dir, source.name))

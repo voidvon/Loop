@@ -2,29 +2,58 @@ package desktop
 
 import (
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/widget"
+	"fyne.io/fyne/v2/theme"
 )
 
-func newAppearanceSelect(a fyne.App, th *clientTheme) *widget.Select {
-	labels := []string{"跟随系统", "浅色模式", "深色模式"}
-	modes := []string{appearanceSystem, appearanceLight, appearanceDark}
-	selectMode := widget.NewSelect(labels, nil)
-	selected := labels[0]
-	for i, mode := range modes {
-		if th.mode == mode {
-			selected = labels[i]
-		}
+func setAppearanceMode(a fyne.App, th *clientTheme, mode string) {
+	if th.mode == mode {
+		return
 	}
-	selectMode.SetSelected(selected)
-	selectMode.OnChanged = func(value string) {
-		for i, label := range labels {
-			if value == label && th.mode != modes[i] {
-				th.mode = modes[i]
-				a.Preferences().SetString("appearance", th.mode)
-				a.Settings().SetTheme(th)
-				return
+	th.mode = mode
+	a.Preferences().SetString("appearance", mode)
+	a.Settings().SetTheme(th)
+}
+
+func newAppearanceSwitches(a fyne.App) (*toggleSwitch, *toggleSwitch) {
+	th, ok := a.Settings().Theme().(*clientTheme)
+	updating := false
+	dark := newToggleSwitch("深色模式", nil)
+	system := newToggleSwitch("跟随系统", nil)
+	if !ok {
+		dark.Disable()
+		system.Disable()
+		return dark, system
+	}
+	sync := func() {
+		updating = true
+		dark.SetChecked(th.variant(a.Settings().ThemeVariant()) == theme.VariantDark)
+		system.SetChecked(th.mode == appearanceSystem)
+		updating = false
+	}
+	dark.OnChanged = func(value bool) {
+		if updating {
+			return
+		}
+		mode := appearanceLight
+		if value {
+			mode = appearanceDark
+		}
+		setAppearanceMode(a, th, mode)
+	}
+	system.OnChanged = func(value bool) {
+		if updating {
+			return
+		}
+		mode := appearanceSystem
+		if !value {
+			mode = appearanceLight
+			if th.variant(a.Settings().ThemeVariant()) == theme.VariantDark {
+				mode = appearanceDark
 			}
 		}
+		setAppearanceMode(a, th, mode)
 	}
-	return selectMode
+	a.Settings().AddListener(func(fyne.Settings) { sync() })
+	sync()
+	return dark, system
 }

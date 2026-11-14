@@ -17,7 +17,7 @@ func legacyStore(t *testing.T) Store {
 		t.Fatal(err)
 	}
 	base := map[string]any{}
-	for _, key := range []string{"inbounds", "log", "experimental"} {
+	for _, key := range []string{"proxy_ports", "log", "experimental"} {
 		if value, ok := config[key]; ok {
 			base[key] = value
 			delete(config, key)

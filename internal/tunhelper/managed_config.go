@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"local/loop/internal/inbound"
 )
 
 const resourcePrefix = "loop-resource:"
@@ -82,18 +84,19 @@ func prepareManagedConfig(req Request, state string) (map[string]any, error) {
 			return nil, fmt.Errorf("TUN 服务不支持配置字段 %s", key)
 		}
 	}
+	endpoints, err := inbound.Parse(req.Config)
+	if err != nil {
+		return nil, err
+	}
+	if !endpoints.TUN {
+		return nil, errors.New("TUN 服务需要 tun-in 入站")
+	}
 	inbounds, _ := config["inbounds"].([]any)
-	if len(inbounds) != 2 {
-		return nil, errors.New("TUN 服务仅允许本地 mixed 和 TUN 两个入站")
-	}
-	mixed, _ := inbounds[0].(map[string]any)
-	tun, _ := inbounds[1].(map[string]any)
-	port, _ := mixed["listen_port"].(float64)
-	if mixed["type"] != "mixed" || mixed["listen"] != "127.0.0.1" || port < 1024 || port > 65535 || port != float64(int(port)) || mixed["set_system_proxy"] == true || tun["type"] != "tun" {
-		return nil, errors.New("TUN 服务需要监听 127.0.0.1:1024–65535 的 mixed 入站和一个 TUN 入站")
-	}
-	if _, exists := tun["file_descriptor"]; exists {
-		return nil, errors.New("TUN 服务不接受外部文件描述符")
+	for _, item := range inbounds {
+		in, _ := item.(map[string]any)
+		if _, exists := in["file_descriptor"]; exists {
+			return nil, errors.New("TUN 服务不接受外部文件描述符")
+		}
 	}
 	outbounds, _ := config["outbounds"].([]any)
 	for _, item := range outbounds {

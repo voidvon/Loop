@@ -1,3 +1,19 @@
+diff --git a/driver/transparent.go b/driver/transparent.go
+new file mode 100644
+index 0000000..3a71894
+--- /dev/null
++++ b/driver/transparent.go
+@@ -0,0 +1,10 @@
++package driver
++
++// TransparentCanvas is an optional Loop extension for desktop framebuffers.
++// SetTransparent must be called before showing the window. It leaves widget
++// theme colors intact; the application supplies its own native backdrop and
++// translucent canvas objects. Ordinary windows retain their opaque background.
++type TransparentCanvas interface {
++	SetTransparent(bool)
++	Transparent() bool
++}
 diff --git a/go.mod b/go.mod
 index 15dcd45..688d738 100644
 --- a/go.mod
@@ -18,6 +34,121 @@ index 15dcd45..688d738 100644
  	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
  	github.com/davecgh/go-spew v1.1.1 // indirect
  	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
+diff --git a/internal/driver/glfw/canvas.go b/internal/driver/glfw/canvas.go
+index 90d6d72..ea1b6de 100644
+--- a/internal/driver/glfw/canvas.go
++++ b/internal/driver/glfw/canvas.go
+@@ -3,6 +3,7 @@ package glfw
+ import (
+ 	"image"
+ 	"math"
++	"sync/atomic"
+ 
+ 	"fyne.io/fyne/v2"
+ 	"fyne.io/fyne/v2/canvas"
+@@ -21,10 +22,11 @@ var _ fyne.Canvas = (*glCanvas)(nil)
+ type glCanvas struct {
+ 	common.Canvas
+ 
+-	content fyne.CanvasObject
+-	menu    fyne.CanvasObject
+-	padded  bool
+-	size    fyne.Size
++	content     fyne.CanvasObject
++	menu        fyne.CanvasObject
++	padded      bool
++	transparent atomic.Bool
++	size        fyne.Size
+ 
+ 	onTypedRune func(rune)
+ 	onTypedKey  func(*fyne.KeyEvent)
+@@ -38,6 +40,14 @@ type glCanvas struct {
+ 	webExtraWindows *container.MultipleWindows
+ }
+ 
++func (c *glCanvas) SetTransparent(transparent bool) {
++	c.transparent.Store(transparent)
++}
++
++func (c *glCanvas) Transparent() bool {
++	return c.transparent.Load()
++}
++
+ func (c *glCanvas) Capture() image.Image {
+ 	var img image.Image
+ 	c.context.(*window).RunWithContext(func() {
+diff --git a/internal/driver/glfw/loop_transparency_darwin_test.go b/internal/driver/glfw/loop_transparency_darwin_test.go
+new file mode 100644
+index 0000000..2dab35a
+--- /dev/null
++++ b/internal/driver/glfw/loop_transparency_darwin_test.go
+@@ -0,0 +1,50 @@
++//go:build darwin && !no_glfw && !mobile
++
++package glfw
++
++import (
++	"image/color"
++	"testing"
++
++	"fyne.io/fyne/v2"
++	"fyne.io/fyne/v2/canvas"
++	"github.com/go-gl/gl/v2.1/gl"
++	"github.com/go-gl/glfw/v3.4/glfw"
++	"github.com/stretchr/testify/assert"
++)
++
++// Exercise real NSGL framebuffer alpha, including the GLFW creation hint and
++// the painter's blend function. Software canvas captures cannot catch this.
++func TestLoopTransparentFramebuffer(t *testing.T) {
++	var transparent, opaque *safeWindow
++	runOnMain(func() {
++		w := d.CreateWindow("transparent framebuffer").(*window)
++		w.canvas.SetTransparent(true)
++		w.SetPadded(false)
++		w.SetContent(canvas.NewRectangle(color.NRGBA{R: 255, A: 128}))
++		w.Resize(fyne.NewSize(100, 100))
++		w.create()
++		transparent = &safeWindow{window: w}
++		w.Show()
++	})
++	defer transparent.Close()
++	repaintWindow(transparent)
++	runOnMain(func() {
++		assert.Equal(t, glfw.True, transparent.viewport.GetAttrib(glfw.TransparentFramebuffer))
++		transparent.RunWithContext(func() {
++			width, height := transparent.viewport.GetFramebufferSize()
++			var pixel [4]uint8
++			gl.ReadBuffer(gl.FRONT)
++			gl.ReadPixels(int32(width/2), int32(height/2), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, gl.Ptr(&pixel[0]))
++			gl.ReadBuffer(gl.BACK)
++			assert.InDelta(t, 128, pixel[0], 1, "surface RGB should be premultiplied once")
++			assert.InDelta(t, 128, pixel[3], 1, "surface alpha must not be squared")
++		})
++		w := d.CreateWindow("opaque framebuffer").(*window)
++		w.SetContent(canvas.NewRectangle(color.White))
++		w.create()
++		opaque = &safeWindow{window: w}
++		assert.Equal(t, glfw.False, w.viewport.GetAttrib(glfw.TransparentFramebuffer), "transparent hint leaked into the next window")
++	})
++	defer opaque.Close()
++}
+diff --git a/internal/driver/glfw/window_desktop.go b/internal/driver/glfw/window_desktop.go
+index c519a76..4e6952c 100644
+--- a/internal/driver/glfw/window_desktop.go
++++ b/internal/driver/glfw/window_desktop.go
+@@ -824,6 +824,11 @@ func (w *window) create() {
+ 	}
+ 	glfw.WindowHint(glfw.AutoIconify, glfw.False)
+ 	initWindowHints()
++	// Always reset this global GLFW hint, including for subsequent opaque windows.
++	glfw.WindowHint(glfw.TransparentFramebuffer, glfw.False)
++	if w.canvas.Transparent() {
++		glfw.WindowHint(glfw.TransparentFramebuffer, glfw.True)
++	}
+ 	if build.IsWayland {
+ 		glfw.WindowHintString(glfw.WaylandAppID, fyne.CurrentApp().UniqueID())
+ 	}
 diff --git a/internal/painter/font.go b/internal/painter/font.go
 index a81dc53..0656958 100644
 --- a/internal/painter/font.go
@@ -585,6 +716,59 @@ index 0000000..3b01cab
 +		t.Fatal("an invalid font polluted the cache")
 +	}
 +}
+diff --git a/internal/painter/gl/gl_core.go b/internal/painter/gl/gl_core.go
+index 2663184..33b0b07 100644
+--- a/internal/painter/gl/gl_core.go
++++ b/internal/painter/gl/gl_core.go
+@@ -69,7 +69,11 @@ type (
+ var textureFilterToGL = [...]int32{gl.LINEAR, gl.NEAREST, gl.LINEAR}
+ 
+ func (p *painter) Init() {
+-	p.ctx = &coreContext{}
++	transparent := false
++	if c, ok := p.canvas.(interface{ Transparent() bool }); ok {
++		transparent = c.Transparent()
++	}
++	p.ctx = &coreContext{transparent: transparent}
+ 	err := gl.Init()
+ 	if err != nil {
+ 		fyne.LogError("failed to initialise OpenGL", err)
+@@ -151,7 +155,7 @@ func (p *painter) Init() {
+ 	}
+ }
+ 
+-type coreContext struct{}
++type coreContext struct{ transparent bool }
+ 
+ var _ context = (*coreContext)(nil)
+ 
+@@ -176,6 +180,12 @@ func (c *coreContext) BlendColor(r, g, b, a float32) {
+ }
+ 
+ func (c *coreContext) BlendFunc(srcFactor, destFactor uint32) {
++	if c.transparent && srcFactor == srcAlpha && destFactor == oneMinusSrcAlpha {
++		// Preserve coverage for the native compositor. Using SRC_ALPHA for
++		// alpha too would square it, making text edges and surfaces too faint.
++		gl.BlendFuncSeparate(srcFactor, destFactor, one, oneMinusSrcAlpha)
++		return
++	}
+ 	gl.BlendFunc(srcFactor, destFactor)
+ }
+ 
+diff --git a/internal/painter/gl/painter.go b/internal/painter/gl/painter.go
+index d0fc194..3f0c8e1 100644
+--- a/internal/painter/gl/painter.go
++++ b/internal/painter/gl/painter.go
+@@ -77,6 +77,9 @@ var _ Painter = (*painter)(nil)
+ 
+ func (p *painter) Clear() {
+ 	r, g, b, a := theme.Color(theme.ColorNameBackground).RGBA()
++	if c, ok := p.canvas.(interface{ Transparent() bool }); ok && c.Transparent() {
++		r, g, b, a = 0, 0, 0, 0
++	}
+ 	p.ctx.ClearColor(float32(r)/max16bit, float32(g)/max16bit, float32(b)/max16bit, float32(a)/max16bit)
+ 	p.ctx.Clear(bitColorBuffer | bitDepthBuffer)
+ 	p.logError()
 diff --git a/internal/painter/gl/texture.go b/internal/painter/gl/texture.go
 index e82bc63..0a0bfaf 100644
 --- a/internal/painter/gl/texture.go
@@ -1191,6 +1375,67 @@ index 0000000..f6926a9
 +func drawSystemText(*image.RGBA, string, string, float32, float32, fyne.TextStyle, color.NRGBA, int) bool {
 +	return false
 +}
+diff --git a/internal/svg/loop_outline_test.go b/internal/svg/loop_outline_test.go
+new file mode 100644
+index 0000000..6de9fb5
+--- /dev/null
++++ b/internal/svg/loop_outline_test.go
+@@ -0,0 +1,32 @@
++package svg
++
++import (
++	"bytes"
++	"image/color"
++	"testing"
++)
++
++func TestLoopOutlineGroupKeepsHollowShapeAndThemeStroke(t *testing.T) {
++	source := []byte(`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><g fill="none" stroke="#000" stroke-width="2"><circle fill="none" cx="12" cy="12" r="8"/></g></svg>`)
++	data, err := Colorize(source, color.NRGBA{R: 12, G: 34, B: 56, A: 128})
++	if err != nil {
++		t.Fatal(err)
++	}
++	if !bytes.Contains(data, []byte(`stroke="#0c2238"`)) || !bytes.Contains(data, []byte(`stroke-opacity="0.501961"`)) {
++		t.Fatalf("outline stroke did not receive theme color and opacity: %s", data)
++	}
++	d, err := NewDecoder(bytes.NewReader(data))
++	if err != nil {
++		t.Fatal(err)
++	}
++	img, err := d.Draw(24, 24)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if img.NRGBAAt(12, 12).A != 0 {
++		t.Fatal("the hollow icon became a filled shape")
++	}
++	if img.NRGBAAt(12, 4).A == 0 {
++		t.Fatal("the themed outline disappeared")
++	}
++}
+diff --git a/internal/svg/svg.go b/internal/svg/svg.go
+index a3c8fb0..9d3f0e8 100644
+--- a/internal/svg/svg.go
++++ b/internal/svg/svg.go
+@@ -222,6 +222,7 @@ type objGroup struct {
+ 	ID              string        `xml:"id,attr,omitempty"`
+ 	Fill            string        `xml:"fill,attr,omitempty"`
+ 	Stroke          string        `xml:"stroke,attr,omitempty"`
++	StrokeOpacity   string        `xml:"stroke-opacity,attr,omitempty"`
+ 	StrokeWidth     string        `xml:"stroke-width,attr,omitempty"`
+ 	StrokeLineCap   string        `xml:"stroke-linecap,attr,omitempty"`
+ 	StrokeLineJoin  string        `xml:"stroke-linejoin,attr,omitempty"`
+@@ -282,6 +283,10 @@ func replacePolygonsFill(polys []*polygonObj, hexColor string, opacity string) {
+ 
+ func replaceGroupObjectFill(groups []*objGroup, hexColor string, opacity string) {
+ 	for _, grp := range groups {
++		if grp.Stroke != "" && grp.Stroke != "none" {
++			grp.Stroke = hexColor
++			grp.StrokeOpacity = opacity
++		}
+ 		replaceCirclesFill(grp.Circles, hexColor, opacity)
+ 		replaceEllipsesFill(grp.Ellipses, hexColor, opacity)
+ 		replacePathsFill(grp.Paths, hexColor, opacity)
 diff --git a/resource.go b/resource.go
 index be439a5..0046c03 100644
 --- a/resource.go

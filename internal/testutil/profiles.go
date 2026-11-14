@@ -16,8 +16,8 @@ func NewStore(t *testing.T) profile.Store {
 	s := profile.Store{Dir: t.TempDir()}
 	values := map[string]any{
 		profile.MainConfigName: map[string]any{
-			"inbounds": []any{map[string]any{"type": "mixed", "listen": "127.0.0.1", "listen_port": 2080}},
-			"route":    map[string]any{"final": "proxy"},
+			"proxy_ports": map[string]any{"default": 2080, "global": 2081, "global_enabled": false},
+			"route":       map[string]any{"final": "proxy"},
 		},
 		"nodes.json":         profile.NodeList{Nodes: []profile.Node{{ID: "a", Name: "A", Outbound: map[string]any{"type": "trojan", "server": "example.com", "server_port": 443, "password": "test"}}}},
 		"subscriptions.json": profile.Subscriptions{},

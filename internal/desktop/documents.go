@@ -31,6 +31,7 @@ type documentController struct {
 	Context                    context.Context
 	Running                    func() bool
 	SaveRules                  func(context.Context, []byte, []byte, bool) (app.RuleSaveResult, error)
+	SavePorts                  func(context.Context, []byte, []byte, bool) (app.DocumentSaveResult, error)
 	SavePolicies               func(context.Context, []byte, []byte, bool) (app.DocumentSaveResult, error)
 	OnApplied                  func(app.DocumentSaveResult)
 	stopped                    atomic.Bool
@@ -62,6 +63,10 @@ func (c *documentController) rulesAvailable() bool {
 
 func (c *documentController) RunRules(data, expected []byte, completed func(error)) {
 	c.run(data, expected, true, c.SaveRules, completed)
+}
+
+func (c *documentController) RunPorts(data, expected []byte, completed func(error)) {
+	c.run(data, expected, true, c.SavePorts, completed)
 }
 
 func (c *documentController) policiesAvailable() bool { return c.available || c.SavePolicies != nil }

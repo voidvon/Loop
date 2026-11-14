@@ -98,7 +98,7 @@ func (m *nodeManager) nodeMenu(sourceID, nodeID string) *fyne.Menu {
 		return nil
 	}
 	return fyne.NewMenu("节点",
-		m.managementAction("编辑节点", theme.DocumentCreateIcon(), func() {
+		m.managementAction("编辑节点", iconEdit, func() {
 			if node := m.manualByID(nodeID); node != nil {
 				m.editManual(node)
 			}
@@ -123,7 +123,7 @@ func (m *nodeManager) subscriptionMenu(sourceID string) *fyne.Menu {
 	})
 	update.Disabled = update.Disabled || sub.URL == ""
 	return fyne.NewMenu("订阅", update,
-		m.managementAction("编辑订阅", theme.DocumentCreateIcon(), func() {
+		m.managementAction("编辑订阅", iconEdit, func() {
 			if source := m.sourceByID(sourceID); source != nil {
 				m.editSubscription(source)
 			}

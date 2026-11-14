@@ -6,6 +6,11 @@ import "fyne.io/fyne/v2"
 
 func newAppWindow(a fyne.App) fyne.Window { return a.NewWindow("Loop") }
 
+// Other platforms retain solid surfaces until a native backdrop adapter is
+// available; transparent framebuffers alone would expose unblurred windows.
+func prepareWindowSurface(fyne.Window) bool       { return false }
+func refreshWindowAppearance(fyne.Window, string) {}
+
 // Keep native decorations on platforms without a custom window adapter.
 func decorateWindow(w fyne.Window, shell *desktopShell, _ func()) {
 	w.SetContent(shell.root)

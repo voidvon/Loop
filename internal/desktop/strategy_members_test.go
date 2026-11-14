@@ -154,7 +154,7 @@ func TestStrategyOnlineSaveUsesTransactionAndSynchronizesEditor(t *testing.T) {
 
 func TestAvailableUsesOrdinaryEditingDeletionAndDefaultControls(t *testing.T) {
 	s, core := testutil.CoreStore(t)
-	config := map[string]any{"inbounds": []any{map[string]any{"type": "mixed", "listen": "127.0.0.1", "listen_port": 2080}}, "route": map[string]any{"final": "direct"}, "policy_groups": []profile.PolicyGroup{{Name: profile.DefaultPolicy, AllNodes: true}, {Name: "Other", Builtins: []string{"direct"}}}}
+	config := map[string]any{"proxy_ports": map[string]any{"default": 2080, "global": 2081, "global_enabled": false}, "route": map[string]any{"final": "direct"}, "policy_groups": []profile.PolicyGroup{{Name: profile.DefaultPolicy, AllNodes: true}, {Name: "Other", Builtins: []string{"direct"}}}}
 	if err := profile.WriteJSON(filepath.Join(s.Dir, profile.MainConfigName), config); err != nil {
 		t.Fatal(err)
 	}

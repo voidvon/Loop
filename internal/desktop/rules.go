@@ -29,19 +29,19 @@ func basicRuleLabel(kind string) string {
 	return "高级规则"
 }
 
-func ruleDescription(rule map[string]any) (string, string) {
+func (p *rulesPane) ruleDescription(rule map[string]any) (string, string) {
 	if basic, ok := profile.ReadBasicRule(rule); ok {
 		value := strings.Join(basic.Values, " · ")
 		if basic.Kind == "ip_is_private" {
 			value = "局域网与非公网 IP"
 		}
-		return basicRuleLabel(basic.Kind) + "  →  " + ruleTargetLabel(basic.Target), value
+		return basicRuleLabel(basic.Kind) + "  →  " + p.targetLabel(basic.Target), value
 	}
 	if rule["action"] == "resolve" {
 		return "域名解析", "将域名解析为 IP，供后续 IP 规则匹配 · 高级规则"
 	}
 	if rule["rule_set"] != nil {
-		return "规则集  →  " + ruleTargetLabel(fieldText(rule["outbound"])), policyValues(rule["rule_set"]) + " · 高级规则"
+		return "规则集  →  " + p.targetLabel(fieldText(rule["outbound"])), policyValues(rule["rule_set"]) + " · 高级规则"
 	}
 	encoded, _ := json.Marshal(rule)
 	return "高级规则 · 在配置页编辑", string(encoded)
@@ -69,7 +69,8 @@ type rulesPane struct {
 	summary, status, empty *widget.Label
 	sectionHeader          *infoRow
 	final                  *widget.Select
-	add, reload, saveFinal *widget.Button
+	add, reload            *widget.Button
+	syncingFinal           bool
 	body                   *fyne.Container
 	finalPage, localPage   fyne.CanvasObject
 	baseline               []byte
@@ -79,6 +80,7 @@ type rulesPane struct {
 	available              bool
 	loadError              error
 	targets, targetLabels  []string
+	defaultPolicy          string
 	contextMenu            *widget.PopUpMenu
 }
 
@@ -91,6 +93,10 @@ func newRulesPane(window fyne.Window, controller *documentController) *rulesPane
 }
 
 func (p *rulesPane) Refresh() {
+	selectedTag := ""
+	if p.section >= 2 && p.section-2 < len(p.remoteSets) {
+		selectedTag = policyValues(p.routing.RuleSets[p.remoteSets[p.section-2]]["tag"])
+	}
 	data, err := os.ReadFile(p.controller.path)
 	var routing profile.RoutingRules
 	if err == nil {
@@ -100,7 +106,11 @@ func (p *rulesPane) Refresh() {
 	p.baseline, p.routing, p.loadError = data, routing, err
 	p.targets = []string{"direct"}
 	p.targetLabels = []string{"直连"}
+	p.defaultPolicy = ""
 	if config, parseErr := profile.ParseDocument(data); parseErr == nil {
+		if p.controller.name == profile.MainConfigName {
+			p.defaultPolicy, _ = profile.DefaultPolicyName(config)
+		}
 		if groups, groupErr := profile.PolicyGroups(config); groupErr == nil {
 			for _, group := range groups {
 				p.targets = append(p.targets, group.Name)
@@ -113,16 +123,30 @@ func (p *rulesPane) Refresh() {
 		p.targetLabels = append(p.targetLabels, ruleTargetLabel("proxy"))
 	}
 	p.final.Options = append([]string(nil), p.targetLabels...)
-	p.final.SetSelected(ruleTargetLabel(routing.Final))
+	p.syncFinalSelection()
 	p.remoteSets = nil
 	for index, set := range routing.RuleSets {
 		if set["type"] == "remote" {
 			p.remoteSets = append(p.remoteSets, index)
 		}
 	}
-	p.summary.SetText(fmt.Sprintf("%d 条本地规则  ·  %d 个订阅", len(p.localIndexes()), len(p.remoteSets)))
+	p.summary.SetText(fmt.Sprintf("%d 个规则集合 · %d 条本地规则", 2+len(p.remoteSets), len(p.localIndexes())))
 	p.hideRuleMenu()
+	if selectedTag != "" {
+		p.section = 1 // A removed subscription returns to the local rules.
+		for row, index := range p.remoteSets {
+			if policyValues(p.routing.RuleSets[index]["tag"]) == selectedTag {
+				p.section = row + 2
+				break
+			}
+		}
+	}
+	if p.section >= 2+len(p.remoteSets) {
+		p.section = 1
+	}
 	p.groups.Refresh()
+	p.groups.Select(p.section)
+	p.showSection()
 	p.filter()
 	p.updateButtons()
 }
@@ -150,8 +174,11 @@ func (p *rulesPane) localIndexes() []int {
 func (p *rulesPane) filter() {
 	p.selected = -1
 	p.filtered = p.localIndexes()
-	if p.section == 2 {
-		p.filtered = append([]int(nil), p.remoteSets...)
+	if p.section >= 2 {
+		p.filtered = nil
+		if p.section-2 < len(p.remoteSets) {
+			p.filtered = []int{p.remoteSets[p.section-2]}
+		}
 	}
 	p.list.UnselectAll()
 	p.list.Refresh()
@@ -165,6 +192,31 @@ func (p *rulesPane) writable() bool {
 
 func (p *rulesPane) SetAvailable(available bool) { p.available = available; p.updateButtons() }
 
+// Loading or restoring a saved selection must not trigger another write.
+func (p *rulesPane) syncFinalSelection() {
+	p.syncingFinal = true
+	p.final.SetSelected(p.targetLabel(p.routing.Final))
+	p.syncingFinal = false
+}
+
+func (p *rulesPane) changeFinal(label string) {
+	if p.syncingFinal || label == p.targetLabel(p.routing.Final) {
+		return
+	}
+	target := p.targetValue(label)
+	if !p.writable() || target == "" {
+		p.syncFinalSelection()
+		return
+	}
+	p.commit(profile.RuleChange{Operation: "final", Final: target}, append([]byte(nil), p.baseline...), func(err error) {
+		if err != nil {
+			p.syncFinalSelection()
+			dialog.ShowError(err, p.window)
+		}
+	})
+	p.updateButtons()
+}
+
 func (p *rulesPane) updateButtons() {
 	if p.add == nil { // Select widgets invoke callbacks during construction.
 		return
@@ -172,7 +224,6 @@ func (p *rulesPane) updateButtons() {
 	writable := p.writable()
 	setEnabled(p.add, writable)
 	setEnabled(p.final, writable)
-	setEnabled(p.saveFinal, writable && p.final.Selected != "" && p.final.Selected != ruleTargetLabel(p.routing.Final))
 	setEnabled(p.reload, !p.controller.working)
 
 	switch {
@@ -212,14 +263,14 @@ func (p *rulesPane) commit(change profile.RuleChange, baseline []byte, completed
 		// Also refresh after rollback so forms and the JSON editor share a baseline.
 		p.Refresh()
 		if err == nil {
-			if p.section != 2 && (change.Operation == "move" || change.Operation == "replace") {
+			if p.section == 1 && (change.Operation == "move" || change.Operation == "replace") {
 				index := change.Index
 				if change.Operation == "move" {
 					index = change.To
 				}
 				for row, actual := range p.filtered {
 					if actual == index {
-						p.list.Select(row)
+						p.selected = index
 						p.list.ScrollTo(row)
 						break
 					}
@@ -276,7 +327,7 @@ func (p *rulesPane) editRule(index int) {
 	kind.OnChanged = func(label string) { setEnabled(values, label != basicRuleLabel("ip_is_private")) }
 	kind.OnChanged(kind.Selected)
 	target := widget.NewSelect(append(append([]string(nil), p.targetLabels...), "拦截"), nil)
-	target.SetSelected(ruleTargetLabel(basic.Target))
+	target.SetSelected(p.targetLabel(basic.Target))
 	validation := wrappedLabel("")
 	var editor *dialog.CustomDialog
 	save := widget.NewButtonWithIcon("检查并保存", theme.DocumentSaveIcon(), func() {
@@ -324,7 +375,7 @@ func (p *rulesPane) deleteRule() {
 		return
 	}
 	index, baseline := p.selected, append([]byte(nil), p.baseline...)
-	name, value := ruleDescription(p.routing.Rules[index])
+	name, value := p.ruleDescription(p.routing.Rules[index])
 	message := fmt.Sprintf("删除第 %d 条规则？\n%s\n%s", index+1, name, value)
 	if p.routing.Rules[index]["action"] == "resolve" {
 		message += "\n删除域名解析步骤可能影响后续 IP 规则。"
@@ -341,6 +392,19 @@ func (p *rulesPane) move(delta int) {
 		return
 	}
 	p.commit(profile.RuleChange{Operation: "move", Index: p.selected, To: p.selected + delta}, append([]byte(nil), p.baseline...), nil)
+}
+
+// Match the compiler's legacy proxy alias without rewriting the source document.
+// In an external full configuration, proxy is a literal outbound tag instead.
+func (p *rulesPane) resolvedTarget(target string) string {
+	if target == "proxy" && p.defaultPolicy != "" {
+		return p.defaultPolicy
+	}
+	return target
+}
+
+func (p *rulesPane) targetLabel(target string) string {
+	return ruleTargetLabel(p.resolvedTarget(target))
 }
 
 func (p *rulesPane) targetValue(label string) string {

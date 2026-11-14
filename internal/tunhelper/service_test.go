@@ -15,7 +15,7 @@ import (
 
 func managedTestConfig() map[string]any {
 	return map[string]any{
-		"inbounds":  []any{map[string]any{"type": "mixed", "listen": "127.0.0.1", "listen_port": 2080}, map[string]any{"type": "tun", "address": []string{"172.19.0.1/30"}, "auto_route": true}},
+		"inbounds":  []any{map[string]any{"type": "mixed", "tag": "mixed-in", "listen": "127.0.0.1", "listen_port": 2080}, map[string]any{"type": "tun", "tag": "tun-in", "address": []string{"172.19.0.1/30"}, "auto_route": true}},
 		"outbounds": []any{map[string]any{"type": "direct", "tag": "direct"}},
 		"route":     map[string]any{"final": "direct"},
 	}

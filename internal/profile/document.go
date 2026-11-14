@@ -134,9 +134,8 @@ func (s Store) CompileDocument(name string, draft []byte) (map[string]any, error
 	if err != nil {
 		return nil, err
 	}
-	inbounds, ok := object["inbounds"].([]any)
-	if !ok || len(inbounds) != 1 {
-		return nil, errors.New("主配置需要一个本地 mixed 入站；TUN 请在首页切换")
+	if _, err := ProxyPorts(object); err != nil {
+		return nil, err
 	}
 	candidate := Store{Dir: s.Dir, documents: map[string][]byte{name: draft}}
 	return candidate.compileNode(&Node{ID: "config-check", Name: "配置校验", Outbound: map[string]any{

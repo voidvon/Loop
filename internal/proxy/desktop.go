@@ -12,9 +12,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"sync"
 	"time"
+
+	"local/loop/internal/inbound"
 )
 
 type Desktop struct {
@@ -53,23 +54,10 @@ func FindCore(executable string) (string, error) {
 	return "", errors.New("找不到 sing-box 内核，请使用包含内核的应用包，或在开发环境安装 sing-box")
 }
 
-// LocalAddress validates the one local mixed inbound this minimal client owns.
+// LocalAddress returns the default inlet used for system proxy integration.
 func LocalAddress(config []byte) (string, error) {
-	var c struct {
-		Inbounds []struct {
-			Type           string `json:"type"`
-			Listen         string `json:"listen"`
-			Port           int    `json:"listen_port"`
-			SetSystemProxy bool   `json:"set_system_proxy"`
-		} `json:"inbounds"`
-	}
-	if err := json.Unmarshal(config, &c); err != nil {
-		return "", fmt.Errorf("读取配置: %w", err)
-	}
-	if len(c.Inbounds) < 1 || len(c.Inbounds) > 2 || (len(c.Inbounds) == 2 && c.Inbounds[1].Type != "tun") || c.Inbounds[0].Type != "mixed" || c.Inbounds[0].Listen != "127.0.0.1" || c.Inbounds[0].Port < 1 || c.Inbounds[0].Port > 65535 || c.Inbounds[0].SetSystemProxy {
-		return "", errors.New("此版本需要唯一的 mixed 入站，监听 127.0.0.1，端口 1–65535；系统代理由客户端管理")
-	}
-	return net.JoinHostPort("127.0.0.1", strconv.Itoa(c.Inbounds[0].Port)), nil
+	endpoints, err := inbound.Parse(config)
+	return endpoints.Default, err
 }
 
 func HasTUN(config []byte) bool {
@@ -123,16 +111,14 @@ func (d *Desktop) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("读取节点配置: %w", err)
 	}
-	address, err := LocalAddress(config)
+	endpoints, err := inbound.Parse(config)
 	if err != nil {
 		return err
 	}
-	// Refuse to mistake another process's listener for our own core.
-	listener, err := net.Listen("tcp", address)
-	if err != nil {
-		return fmt.Errorf("本地端口 %s 已被占用: %w", address, err)
+	address := endpoints.Default
+	if err := inbound.CheckAvailable(endpoints.Addresses()); err != nil {
+		return err
 	}
-	listener.Close()
 	check := exec.CommandContext(ctx, d.CorePath, "check", "-c", configPath)
 	if output, err := check.CombinedOutput(); err != nil {
 		return fmt.Errorf("配置检查失败: %w\n%s", err, output)
@@ -184,8 +170,10 @@ func (d *Desktop) Start(ctx context.Context) error {
 			return errors.Join(err, d.stopLocked())
 		}
 	}
-	if err := waitReady(ctx, address, done); err != nil {
-		return errors.Join(err, d.stopLocked())
+	for _, endpoint := range endpoints.Addresses() {
+		if err := waitReady(ctx, endpoint, done); err != nil {
+			return errors.Join(err, d.stopLocked())
+		}
 	}
 	// Verify a real request before switching the user's system proxy.
 	if err := CheckConfiguredConnection(ctx, address, config); err != nil {
@@ -249,6 +237,10 @@ func CheckConfiguredConnection(ctx context.Context, address string, config []byt
 		conn.Close()
 		return ctx.Err()
 	}
+	// Test the fixed proxy inlet when present, including in homepage direct mode.
+	if endpoints, err := inbound.Parse(config); err == nil && endpoints.Global != "" {
+		address = endpoints.Global
+	}
 	return CheckConnection(ctx, address)
 }
 
@@ -311,7 +303,7 @@ func (d *Desktop) stopLocked() error {
 			if d.tun != nil {
 				// Before authorization the helper has not connected and owns no
 				// core; a late approval cannot connect to the closed socket.
-				if d.tun.conn != nil {
+				if d.tun.helperConnected() {
 					return errors.New("等待 TUN 内核清理超时，请重试停止")
 				}
 			}

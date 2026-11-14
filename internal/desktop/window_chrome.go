@@ -14,7 +14,7 @@ const (
 	windowHeaderHeight    float32 = 48
 	windowControlDiameter float32 = 12
 	windowControlPitch    float32 = 20
-	windowControlsLeft    float32 = 10
+	windowControlsLeft    float32 = 16
 )
 
 // Fixed colors keep the macOS traffic-light symbols dark in both appearances.
@@ -45,8 +45,9 @@ func newWindowHeader(actions windowActions) fyne.CanvasObject {
 		}
 		buttons.Add(control)
 	}
-	background := themedSurface(colorSidebar, 0)
-	return container.NewStack(background, inset(10, 10, windowControlsLeft, 0, container.NewBorder(nil, nil, buttons, nil)))
+	// The shell already paints the sidebar. A second translucent fill here
+	// would leave a darker strip behind the traffic lights.
+	return inset(10, 10, windowControlsLeft, 0, container.NewBorder(nil, nil, buttons, nil))
 }
 
 // Native traffic lights have a 12-point diameter and 20-point center spacing.
