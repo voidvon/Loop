@@ -26,6 +26,7 @@ printf '%s\n' '{"subscriptions":[]}' > "$seed_dir/subscriptions.json"
 go run ./cmd/loopctl -state-dir "$check_dir/state" -profiles "$seed_dir" -render-config "$check_dir/config.json"
 "$core_path" check -c "$check_dir/config.json"
 printf '%s\n' '{"nodes":[]}' > "$seed_dir/nodes.json"
+printf '%s\n' '{"source":"","node":""}' > "$seed_dir/selection.json"
 
 app_dir="$check_dir/Loop.app"
 mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources/licenses"
