@@ -317,11 +317,30 @@ bash scripts/package-macos.sh
 open dist/Loop.app
 ```
 
-生成自带内核、主配置、节点订阅数据和规则库的 `.app`、本机 CPU 架构的 ZIP，用户无需安装 Go、Homebrew 或 sing-box。当前是同架构 macOS 15+ 的本地 ad-hoc 签名构建，不是 universal 包。
+生成自带内核、公共主配置和规则库的 `.app`、本机 CPU 架构的 `Loop-v<版本>-macos-<架构>.zip`，用户无需安装 Go、Homebrew 或 sing-box。节点和订阅初始为空，首次使用请自行导入。打包不读取本地节点、订阅、选择、设置或备份。当前是同架构 macOS 15+ 的 ad-hoc 签名构建，不是 universal 包，尚未经 Developer ID 签名或 Apple 公证。
 
 应用图标源文件为 `internal/desktop/assets/app-icon.png`，同时嵌入桌面程序并用于侧栏标识；打包时自动生成包含标准与 Retina 尺寸的 `Loop.icns`，供 Finder 和 Dock 使用。
 
-包内含当前节点凭据，适合自己的本地使用；分享前换成适合分发的配置。对外分发另需 Developer ID 签名、公证，以及按 sing-box GPL-3.0-or-later 许可提供对应源码与第三方许可说明。
+包内保留 sing-box 和界面依赖的许可说明；Release 同时提供内核对应源码及依赖许可。
+
+### 发布版本
+
+`VERSION` 是应用包和 GitHub Release 的版本来源，首版为 `0.1.0`，标签使用 `v` 前缀。每次增加修订号；修订号达到 20 后，下次增加次版本并将修订号归零；次版本和修订号均达到 20 后，下次增加主版本并将其余两位归零：
+
+```text
+0.1.0 → … → 0.1.20 → 0.2.0
+0.20.20 → 1.0.0
+1.0.20 → 1.1.0
+```
+
+```sh
+bash scripts/version.sh current
+# 计算下一版并写入 VERSION，随后提交、打包并发布对应标签。
+bash scripts/version.sh next > VERSION.next && mv VERSION.next VERSION
+make package
+```
+
+目前仅发布 macOS；下载地址见 [GitHub Releases](https://github.com/voidvon/Loop/releases)。
 
 ## 使用边界
 
