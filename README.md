@@ -1,331 +1,150 @@
 # Loop
 
-Fyne / Go macOS 代理客户端，界面采用左侧导航、右侧内容布局，包含首页、节点、策略、规则、配置、更多六个入口。macOS 窗口按钮仅占左侧顶部，右侧标题与操作栏从窗口顶端开始，各页面采用紧凑的单行标题。首页控制代理开关；节点页管理节点和订阅；策略页统一选择节点与策略组；规则页管理 Final、本地规则和订阅规则；配置页直接编辑统一主配置；更多页采用左侧设置分类、右侧配置区域，提供开机自启、菜单栏设置、代理端口、分流测试和批量测速。启动先校验配置和请求连通性，再设置系统代理或启动 TUN；关闭窗口退出 UI 并保留后台连接；`⌘Q` 或菜单栏“退出 Loop”停止后台并恢复代理设置。
+A macOS proxy client built with Go and Fyne, powered by sing-box.
 
-界面支持跟随系统、浅色和深色三种外观，可在首页“快捷开关”中切换，重启后保留偏好。卡片、列表、弹窗、控件和配置编辑器同步配色。macOS 使用原生 AppKit 毛玻璃背景，侧栏更通透，内容区与卡片叠加半透明底色；文字、输入框和弹窗保留实色以保证可读性。原生材质同步外观选择，并遵循系统辅助功能的透明度偏好。平台窗口适配与 Fyne 页面分离，其他平台暂时使用实色背景。首页采用窄侧栏、三列概况卡片和无阴影的圆角面板，深浅外观统一使用中性灰材质、蓝色选中态和线框 SVG 图标。顶部通过分段控件切换分流模式，快捷开关管理 TUN、深色模式和跟随系统。控件基于 Fyne Button、Check、List 和 PopUpMenu 保留键盘、焦点和禁用行为，无 WebView。
+English | [简体中文](README_CN.md)
 
-macOS 界面从本机加载苹方简体（PingFang SC）常规与半粗字重，字体不打入应用包；配置编辑器继续使用等宽字体。
+[Download](https://github.com/voidvon/Loop/releases/latest) · [Getting Started](#getting-started) · [Documentation](#documentation) · [Release History](https://github.com/voidvon/Loop/releases)
 
-macOS 菜单栏使用从应用标识简化的单色无限循环图形，提供标准与 Retina 位图，作为原生模板图标随系统菜单栏配色；G / R / D 嵌入图标右下角的共同留白，表示全局代理、自动分流、全局直连。图形和字母合成在同一个 18 点方形图标内，使用系统方形状态项宽度；关闭模式字母后显示完整循环图形。未连接时透明度为 50%，连接后为 100%。原生菜单可开关代理、展开所有策略组并切换节点、显示主窗口或退出。菜单栏由独立后台持有，UI 退出后仍可切换节点并恢复连接。更多 → 菜单栏提供模式字母、断开时半透明、策略列表三个显示开关，修改立即生效并在重启后保留；界面偏好独立于主配置，修改不会重启代理。
+## Overview
 
-更多 → 开机自启提供「登录时启动 Loop」开关，通过 macOS [SMAppService.mainAppService](https://developer.apple.com/documentation/servicemanagement/smappservice/mainapp?language=objc) 注册主应用登录项；进入 macOS 用户会话后打开应用，代理连接仍由首页控制。请在打包后的 Loop.app 中设置，建议先放入「应用程序」。状态以系统登录项为准，每次打开该页面以及从系统设置返回时重新读取；等待系统允许时明确显示「尚未生效」并提供登录项设置入口，启用失败会恢复实际状态，等待允许的注册也可关闭。不写入节点、规则或主配置，关闭自启不会退出当前应用。
+Loop brings proxy connections, nodes, subscriptions, policy groups, routing rules, and diagnostics into one desktop app. Use the system proxy or TUN mode, manage connections from the menu bar, and keep the proxy running after closing the window.
 
-更多 → 分流测试可输入 HTTP / HTTPS 网址（省略协议时补 `https://`），显示实际命中规则、策略路径、使用节点、节点来源、请求延迟和 HTTP 状态。使用已保存的主配置、当前模式和策略选择，不读取编辑器草稿；通过临时 sing-box 内核实际请求，断开时也可使用。延迟包含节点连接、TLS 握手至响应头，不含内核启动与规则集加载，不跟随重定向。HTTP 403 / 404 等仍视为网站有响应；拒绝、超时、连接失败分别显示，已知的出站结果保留。默认总超时 20 秒，可取消；关闭界面会取消并回收测试内核。测试期间暂时锁定其他后台操作，不修改配置、节点选择、系统代理或正在运行的连接。此功能测试网址，不模拟浏览器或其他应用的进程、TUN、入站认证条件。
+Bring your own proxy nodes or subscription. Release packages include the sing-box core and routing rule snapshots, with empty node and subscription lists.
 
-更多 → 批量测速内置类似 [hey](https://github.com/rakyll/hey) 的 HTTP 测试，无需安装 hey。默认网址 `https://ai.nodeisle.com/`、`-n 200`、`-c 10`、单请求超时 `-t 20` 秒，可修改网址；高级参数提供 `-z`（如 `30s`，设置后忽略 `-n`）、每个并发任务的 `-q` 限速、GET / HEAD、连接复用、重定向、压缩和 HTTP/2。默认复用连接、禁用压缩、不跟随重定向、使用 HTTP/1.1。可以按当前已保存分流测试，或勾选本地/订阅节点：每个节点独立执行相同的一组参数，按顺序测试，不改变策略选择。列表显示完成数、2xx 成功率、平均延迟、P95 和请求/秒，点击行查看最快/最慢、P50/P90/P95/P99、响应体数据量与平均 MiB/s、状态码和网络错误分布。延迟计时覆盖完整响应体读取，区别于分流测试的响应头耗时；分位延迟采用固定大小直方图，误差约 1%，避免持续测试时内存随请求数增长。非 2xx 和网络失败分别统计；取消或持续时间结束时中断的请求单独计数，不计入成功率分母。请求数上限 100000、并发上限 256、单请求超时上限 120 秒、每节点持续时间上限 1 小时，一次最多选 128 个节点。后台实时发布进度；取消或关闭 UI 会回收测试内核并保留可取得的部分结果。测试不重启正在运行的代理，也不修改系统代理、TUN、规则、节点和策略选择。
+## Features
 
-macOS 窗口从创建时就不带系统标题栏，避免启动时先显示再隐藏标题栏的闪现；随后恢复标准窗口的缩放、调整大小与最小化能力。左上角由 Fyne 绘制红、黄、绿三个控制按钮：关闭 UI 并保留后台连接、最小化到 Dock、放大／还原窗口。顶部空白区域可以拖动，双击可以放大／还原；窗口边缘仍可调整大小。关闭按钮沿用配置草稿确认。窗口操作通过 Fyne 公开的原生窗口接口和独立的 Cocoa 适配层完成；其他平台保留原生标题栏。
+- **Connection modes** — rule-based routing, global proxy, and direct mode, with system proxy or TUN support.
+- **Nodes and subscriptions** — add VLESS links or import Clash YAML subscriptions; keep nodes separate from routing rules.
+- **Policy groups** — select nodes, combine groups, filter by name, and measure node latency.
+- **Routing and configuration** — manage local rules and remote rule sets, or edit JSON with highlighting, search, formatting, and validation.
+- **Desktop controls** — light, dark, and system appearance; macOS translucent backgrounds; menu bar controls and launch at login.
+- **Independent background service** — close the window while connections continue; control the service with the bundled CLI and JSON output.
+- **Diagnostics** — inspect URL routing, test node latency, and run batch HTTP benchmarks.
 
-## 项目结构
+## Downloads
 
-入口使用 `cmd/loop`，桌面界面、应用服务、配置领域和系统代理后端分别放在 `internal/desktop`、`internal/app`、`internal/profile` 和 `internal/proxy`。TUN 授权辅助程序保留独立入口 `cmd/loop-tun`。具体边界与维护约定见 [架构说明](docs/architecture.md)。
+Download the app from [GitHub Releases](https://github.com/voidvon/Loop/releases/latest).
 
-日常开发使用 `make run`、`make build`、`make test`、`make vet` 和 `make package`，这些入口会自动准备依赖。首次拉取后若直接使用 `go run ./cmd/loop`、`go test` 或 IDE，请先执行一次 `make prepare`；根目录 `go run .` 继续兼容。
+| Platform | Architecture | Requirement | Package |
+| --- | --- | --- | --- |
+| macOS | Apple Silicon (`arm64`, M-series) | macOS 15 or later | `Loop-v<version>-macos-arm64.zip` |
 
-仓库只保存 [Fyne 补丁](third_party/fyne-patches/README.md)及上游版本/校验值。`third_party/fyne/` 是从 Go 模块缓存重建的生成目录，已加入 Git 忽略；首次准备可能下载固定版本，后续可复用缓存。构建产物、临时诊断文件、真实节点与订阅配置也不纳入版本控制。
+The current release targets Apple Silicon only. Intel, universal, Windows, Linux, and Android packages are not available.
 
-## 配置编辑
+Releases include `SHA256SUMS.txt` and the corresponding sing-box source archive. Dependency licenses are included inside the app bundle.
 
-配置页使用原生 Fyne [go-fyne-pretty-view](https://github.com/ideaconnect/go-fyne-pretty-view) v2.7.0，提供 JSON 语法高亮、行号、折叠、搜索、撤销/重做与格式化，无 WebView。
+> Current builds use ad-hoc signing and are not notarized by Apple. If macOS blocks the app, attempt to open it once, then allow it in **System Settings → Privacy & Security**.
 
-编辑器仅在首次进入配置页时加载，文件未变化时保留光标与撤销历史。UI 使用本地 Fyne 字体缓存补丁，避免切换页面和外观时重复保留大型字库；系统苹方、粗体、Emoji 和深浅色均保留。实现与测量记录见 [UI 内存](docs/ui-memory.md)。
+## Getting Started
 
-配置页直接编辑 `profiles/config.json`，包含 `proxy_ports` 代理端口设置、日志、缓存、DNS、策略组、分流规则和规则库。mixed 入站由客户端生成。没有配置下拉或只读运行预览。
-节点和订阅继续在“节点”页管理；TUN 和分流模式在首页管理。
+The app interface currently uses Simplified Chinese. The labels below match the app.
 
-主配置是配置编辑与各设置页面共同使用的唯一来源；运行时生成的 sing-box 配置不会回写。已有主配置有错误时会明确提示，不会用内置值静默覆盖。
+1. Download the ZIP, extract it, and move `Loop.app` to **Applications**.
+2. Open Loop and go to **Nodes (节点)**. Click **+** to add a `vless://` link or a Clash YAML subscription URL.
+3. Open **Policies (策略)** and select a node in `Available`, the initial default policy group.
+4. On **Home (首页)**, choose **Rule-based (自动分流)**, **Global Proxy (全局代理)**, or **Direct (全局直连)**.
+5. Enable the proxy connection. System proxy mode is the default. To use TUN, enable **TUN Mode (TUN 模式)**; the first use requests administrator authorization to install its helper service.
+6. Optionally configure **More (更多)** for launch at login, menu bar preferences, proxy ports, and diagnostics.
 
-点击“格式化”统一 JSON 缩进；无效 JSON 会显示错误行、列，并在执行格式化/校验/保存时跳到错误处。只接受严格 JSON，不支持注释、尾逗号或重复字段。文本上限 2 MiB。输入时保持你的排版，不会边输入边重排。
+Closing the window keeps the background service and current connection running. Use **⌘Q** or **Quit Loop (退出 Loop)** in the menu bar to stop the app and connection.
 
-“校验”执行 JSON、客户端约束和 `sing-box check`，不修改文件，也不建立代理连接。编辑主配置时，使用仅用于校验的占位出口检查完整的自动分流策略，即使当前是全局直连或全局代理，也不会遗漏自动分流规则的错误；该出口不会启动或持久化。
+## Everyday Use
 
-“保存”在通过相同校验后，将原文件备份到同目录的 `.bak`（保留最近一次），再原子替换源文件，文件与备份权限为 0600。校验失败或检测到文件已被外部修改时保留原文件。重新载入可以丢弃当前草稿、读取磁盘内容；如有草稿会先提示。
+### Routing modes and ports
 
-连接期间允许编辑草稿，停止连接后可校验、保存；保存后下次启动生效。切换侧边栏或模式不会丢失草稿。未保存内容只保留在 UI 内存中，关闭窗口或正常退出会提示。强制结束 UI 无法保留草稿，但不会结束独立后台。
+| Mode | Default proxy port and TUN traffic |
+| --- | --- |
+| Rule-based | Follow the saved routing rules and DNS configuration |
+| Global Proxy | Use the default policy group; local domains and private IPs stay direct |
+| Direct | Connect directly |
 
-使用 `-config` 调试模式时，此页直接编辑指定的完整 JSON 文件，保存前同样执行内核检查和备份；此模式绕过分离配置管理。
+Loop provides two local HTTP/SOCKS5 endpoints. Change their ports under **More → Proxy Ports (更多 → 代理端口)**.
 
-## 策略组
-
-节点页只管理本地节点和订阅，所有节点选择集中在“策略”页。左侧列出策略组，右侧显示该组可选的节点与子策略，点击后保存并高亮当前生效成员。
-
-- `Available`：首次运行创建的普通策略组，初始包含全部本地与订阅节点，并沿用升级前所选节点；和其他组一样可编辑成员、筛选条件及组引用，也可删除。初始 Final、全局代理、代理 DNS 与规则库下载均通过它。
-- `YouTube`、`Telegram`：默认选择 Available，也可以选国家组或具体节点。内置域名规则与 Telegram IP 规则会指向对应应用组；这里按目的域名/IP 分流，并非按进程识别 App。Telegram IP 段来自 [官方列表](https://core.telegram.org/resources/cidr.txt)，是随版本提供的快照。
-- `HK`、`TW`、`SG`、`JP`、`KR`、`US`：根据节点名称的地区文字、代码、旗帜筛选，可编辑正则表达式。没有匹配节点时显示为空，不会自动直连。
-
-以上均为手动选择组，不会自动切换或故障转移。可以新增策略组、编辑节点筛选和组引用；新增应用组后，在规则页添加对应规则。Available 与其他组使用相同的编辑、删除流程。删除策略组时，会同时从其他组的可选列表中移除该组；如果其他组当前选用了它，或规则、Final、DNS 等仍依赖它，则提示具体依赖，先切换选择或修改对应引用后再删除。删除不会移除节点或订阅，也不会自动更换流量出口。定义中的节点筛选会随订阅节点更新自动展开，订阅自带策略不会覆盖本地策略。
-
-策略组编辑器先显示已添加的成员，每项可点击垃圾桶移除；“全部节点”与“整个来源”作为自动更新项显示，不展开成所有节点。点击“添加”才打开独立选择器，支持搜索和多选，分为 **内置 / 自动包含 / 本地节点 / 订阅节点 / 策略组**；订阅父级和本地节点父级可直接勾选，按整个来源保存并随更新自动包含节点；已添加项标记并禁用，确认后加入主弹窗，取消选择器不改变编辑草稿。主弹窗点击“保存”后才写入配置，取消不会保存添加或移除操作。内置支持 `DIRECT`（直连）和 `REJECT`（sing-box 原生 block，拒绝连接）；不提供 Loon 专用的图片、视频或 JSON 响应替换类型。节点按稳定 ID 保存，可添加多个具体节点，也可加入整个本地来源或订阅以随更新自动包含节点。“自动节点筛选”中可设置名称正则，仅筛选自动包含的节点，明确添加的节点始终保留。策略页采用双栏布局：左侧显示紧凑策略组列表、服务或地区图标与当前成员，右侧通过可滚动、自动换行的卡片网格选择成员。卡片展示名称、内置／本地／订阅／策略组类型与来源，以及实际测速结果；当前生效成员使用柔和蓝色背景。网格保留控件复用与键盘操作，工具栏提供默认策略、测速、编辑和删除。
-
-右上角可通过“设为默认”指定全局代理出口；当前默认组显示“默认策略”。该角色保存于主配置 `default_policy`，初始为 Available，可以改为任意策略组。已有规则、Final 和 DNS 的明确引用保持原样；删除前按提示修改这些引用或切换其他组的当前选择。删除默认组会清空默认角色；没有默认组时仍可使用有效的自动分流或直连配置，全局代理会提示先设置默认组，绝不自动换节点或直连。
-
-其后依次为测速、编辑、删除图标。测速批量测量当前组节点的延迟，并在行末显示 `ms`、超时或失败；子策略测量其当前选中的实际节点，重复节点只测一次；内置直连和拒绝项跳过节点测速。再次点击测速位置的停止图标可取消。测速通过节点请求 `https://www.gstatic.com/generate_204`，要求返回 HTTP 204；耗时包含连接节点、TLS 握手和响应头，并非下载带宽或 ICMP ping。默认并发 4、每节点超时 10 秒，结果仅保留在本次运行内存中。独立测速内核不修改系统代理、TUN、主配置或策略选择，已有连接继续运行；测速期间暂时锁定其他代理与配置操作。
-
-策略组定义写进同一份主配置的 `policy_groups`；`builtins` 保存内置成员（`direct` / `reject`），`nodes` 保存具体节点稳定键，`sources` 保存自动包含的来源 ID，`groups` 保存子策略名；原有 `all_nodes` 与 `filter` 继续兼容。选中项统一保存在 `policy-selections.json`；旧版 Available 首次读取时兼容 `selection.json`，通过旧 CLI 选择 Available 节点时同步兼容文件。运行时编译成 sing-box [selector](https://sing-box.sagernet.org/configuration/outbound/selector/)，客户端字段不传给内核。连接中选择节点或子策略会停止并重新连接，失败时恢复原选择并尝试恢复连接；已安装 TUN 服务时重连不再重复授权。连接期间也可新增、编辑和删除策略组：先校验真实节点选择，再自动重新连接；失败时恢复原配置并重新连接，校验失败保持原连接。全局代理同样自动应用；全局直连期间仅保存，未连接时保存不会自动启动。添加成员会保留原先的隐式选择；移除当前选中成员需先切换选择。配置草稿未保存时禁止跨页写入。
-
-升级旧主配置时保留 `config.json.pre-policies.bak`，把原 `proxy` 引用迁移为 Available，并在已有规则后追加应用规则，保留原规则的优先级。所选节点消失时会提示重新选择；订阅刷新若会移除策略组选中节点则拒绝本次刷新，先在策略页切换再更新。
-
-## 规则管理
-
-“规则”页顶部保留标题、集合数、本地规则数与操作图标，左侧按 **兜底 / 本地规则 / 每个规则订阅** 展示；兜底和订阅显示实际策略标签，本地规则显示“按规则设置”。右侧采用紧凑双列卡片，窄窗口自动变为单列，展示规则类型、匹配内容与 `Available`／`DIRECT` 等策略标签。支持深浅色与系统字体；点击或右键卡片打开管理菜单，也可用方向键定位后按空格打开。所有修改直接写入同一份 `profiles/config.json`。
-
-- **Final**：选择未命中前面规则的流量默认直连或走策略组（默认 Available），更改下拉选项后自动校验并保存；失败时恢复原选项。
-- **本地规则**：支持完整域名、域名后缀、域名关键词、IPv4 / IPv6 地址或 CIDR、私有 IP；处理方式可选直连、策略组或拦截。点击右上角 `+` 添加，卡片菜单提供编辑、删除、上移 / 下移。一条规则可填写多个值，卡片展示首个值与其余数量，编辑时可查看全部。
-- **订阅规则**：支持 [sing-box 远程规则集](https://sing-box.sagernet.org/configuration/rule-set/)的 JSON 源格式与 `.srs` 二进制格式。添加时填写名称、链接、格式、更新间隔和处理策略；内核负责下载、缓存及定时更新。此处订阅的是规则集，不是节点订阅，也不是整份 sing-box 配置。卡片显示规则集定义，不把文件内的条目数量冒充已加载规则数。
-- 新域名规则置顶；新 IP 规则默认插在无条件解析步骤之后，缺少时补上。新增订阅可选“仅域名 · 优先匹配”或“包含 IP · 解析后匹配”。菜单中的“查看详情”展示完整内容与本地规则在主配置中的真实匹配顺序，分组展示不改变优先级；订阅的单一简单路由引用也可在菜单中上移 / 下移。
-- 编辑订阅保留下载客户端等已有设置；更换 URL / 格式时移除旧的初始快照路径。订阅名称固定以保护引用。删除订阅会同时移除其简单路由引用；若 DNS、复杂条件或多个规则集共用的条件仍依赖它，则阻止删除并提示先处理引用。多标签定义、复杂引用的处理策略仍在配置页管理。
-- 逻辑规则、解析动作和非远程规则集引用继续在本地规则中原样展示，不会被常规表单简化。高级条件在配置页编辑。
-
-每次规则修改都先执行同一套 JSON 与内核校验，通过后备份并保存；不会修改 DNS、节点或节点订阅。DNS 规则仍在配置页独立调整。连接中可新增、编辑、删除、排序规则以及修改 Final；自动分流模式下会检查实际策略选择，再自动停止并重新连接以应用新规则，过程中已有连接会短暂中断，已安装 TUN 服务时不再重复授权。新规则启动失败时恢复原配置并尝试重新连接原配置，若恢复连接也失败则明确显示未连接与错误。校验失败不停止原连接；全局直连 / 全局代理期间仅保存，当前连接保持，切回自动分流后生效。未连接时保存不会自动启动代理。配置页有未保存草稿时禁止规则页写入，请先保存或放弃草稿，避免相互覆盖。
-
-策略、节点、规则三页共用 `collection_view.go` 中的双栏容器、页头、列表主题、卡片网格、圆形图标与操作按钮；列表行统一使用 `infoRow`。策略成员与节点共用 `memberCard`，规则保留适合两行信息的紧凑卡片；规则集合与卡片共用 `statusBadge`，统一标签尺寸、颜色和截断。其他设置、策略成员编辑与测速选择列表也沿用 `infoRow`，按需保留复选框、删除按钮等交互。
-
-## 首页分流模式
-
-- **全局直连**：默认代理入口与 TUN 流量直连。独立全局代理入口仍使用默认策略；关闭该入口后，直连模式不依赖代理节点。
-- **自动分流**：默认入口与 TUN 使用主配置 `config.json` 中保存的规则与 DNS；默认国内直连、其他代理。
-- **全局代理**：局域网域名和私有 IP 直连，其他流量走已设置的默认策略（初始 Available）；其他域名通过该策略访问 Cloudflare DoH。
-
-首次使用默认为自动分流。模式单独保存在 `settings.json`，不覆盖规则、节点、订阅和当前节点选择。停止时切换只保存设置；连接中切换会自动停止、应用模式并重连，已有连接会中断。如果新模式启动失败，会恢复原模式设置并尝试重新连接。完整配置 `-config` 调试模式不提供此切换。
-
-全局模式是生成配置时的临时覆盖，切回自动分流即可恢复主配置中的规则。
-
-这些模式控制**默认代理入口与 TUN**，与独立全局代理入口分开。开启 TUN 后也可以使用“国内直连、其他代理”。
-
-## 代理端口
-
-在 **更多 → 代理端口** 中配置两个同时可用的 HTTP / SOCKS5 入口：
-
-| 入口 | 初始地址 | 行为 |
+| Endpoint | Default address | Behavior |
 | --- | --- | --- |
-| 默认代理 | `127.0.0.1:2080` | 跟随首页模式；系统代理指向此入口 |
-| 全局代理 | `127.0.0.1:2081` | 始终使用当前默认策略（初始 Available），局域网保持直连 |
+| Default proxy | `127.0.0.1:2080` | Follows the mode selected on Home; used by the system proxy |
+| Global proxy | `127.0.0.1:2081` | Always uses the default policy group; can be disabled separately |
 
-全局入口默认启用，也可以单独关闭；关闭后保留端口设置。两种入口共享内核、节点与策略，断开连接时一起停止。终端和 IDE 可以单独使用全局入口，同时让其他软件按首页规则分流。页面提供 HTTP / SOCKS5 地址复制操作，首页显示入口地址与关闭状态。
+The global endpoint continues to use its policy group in Direct mode. Disable it if you want Direct mode to work without a proxy node.
 
-端口接受 1024–65535 的整数，两个端口必须不同，仅监听本机。输入完成后按回车或离开输入框自动保存。保存前检查端口占用与内核配置；在线修改会重新连接，失败时恢复原配置和原连接。全局入口启用时必须设置可用的默认策略，即使首页处于全局直连模式；策略选择、默认策略修改仍会应用到全局入口。
+### Nodes, policies, and rules
 
-主配置通过一个字段保存端口，运行时生成带固定标签的入站，不在主配置中手写 `inbounds`：
+Manage nodes on **Nodes (节点)** and choose the active node on **Policies (策略)**. Selecting a node card on the Nodes page does not change the active connection. Groups use manual selection; automatic failover is not implemented.
 
-```json
-"proxy_ports": {
-  "default": 2080,
-  "global": 2081,
-  "global_enabled": true
-}
-```
+The single-node add flow accepts VLESS links. Clash YAML subscriptions support common fields for VLESS, VMess, Trojan, Shadowsocks, Hysteria2, TUIC, AnyTLS, SOCKS5, and HTTP. Plugin-based nodes, proxy chains, and Base64 URI subscription lists are not supported. Subscription fetches use a direct connection.
 
-全局入口的路由与 DNS 规则在运行时生成，优先于普通分流规则，并仅匹配该入口；默认入口和 TUN 继续使用当前模式的规则。全局入口使用独立的代理 DNS 传输，避免被普通分流 DNS 覆盖。`-config` 完整配置调试模式仍直接使用原生 sing-box 入站配置。
+Use **Rules (规则)** to manage local rules, remote JSON/`.srs` rule sets, and the final fallback policy. Use **Config (配置)** for advanced JSON editing. Unsaved configuration drafts must be saved or discarded before making changes on other pages. Changes that affect a live connection can trigger a reconnect.
 
-双入口更新同时升级后台与 TUN 服务协议。旧后台需退出后运行新版；已安装的旧 TUN 辅助服务会在下次启用 TUN 时请求更新授权。
+### Configuration and data
 
-## TUN 模式（macOS）
+Installed apps store data in `~/Library/Application Support/loop/`:
 
-首页新增 **TUN 模式**，默认关闭，连接中也可修改，保存于 `settings.json`，不改动节点、订阅和自动分流策略。连接中切换会自动停止原接管方式并重新连接，过程中已有连接会短暂中断；未连接时只保存开关，不会自动启动。切换失败或取消授权时恢复原开关并尝试重新连接原接管方式；如果原连接也恢复失败，则显示未连接和具体错误。
+| Path | Contents |
+| --- | --- |
+| `profiles/config.json` | Main configuration: ports, DNS, policies, and routing rules |
+| `profiles/nodes.json` | Local nodes and credentials |
+| `profiles/subscriptions.json` | Subscription URLs and node snapshots |
+| `profiles/policy-selections.json` | Selected policy members |
+| `profiles/settings.json` | Routing mode and TUN preference |
+| `runtime/config.json` | Generated sing-box configuration |
+| `sing-box.log` | Core log |
 
-- **关闭**：使用原有 HTTP / HTTPS / SOCKS 系统代理，启动不需要 TUN 授权。
-- **开启**：首次使用请求 macOS 管理员授权，安装一次 TUN 服务；之后开关 TUN、修改配置、重开 Loop 均直接连接服务，不重复输入密码。界面和后台仍以普通用户身份运行，后台直接连接授权服务，不再启动独立的 `loop-tun` 中继进程；系统服务只运行固定安装的内核，创建双栈 TUN 并接管 TCP / UDP。TUN 不修改 HTTP / HTTPS / SOCKS 系统代理。
-- 常规配置重连不再请求授权；安装的内核二进制或服务协议需要更新时，才会再次请求安装授权。服务由 launchd 按需启动，重开应用或重启系统后仍可使用；没有连接约 5 秒后自动退出，下次使用 TUN 时由系统唤醒，不会自动接管网络。旧版常驻服务会在下次开启 TUN 时请求一次更新授权。切换期间暂时禁用开关，防止重复发起连接操作。
-- 已有 VPN / TUN 接管默认路由时拒绝启动，请先关闭其他 VPN，避免覆盖其路由。普通系统代理软件也建议停止，避免浏览器仍主动连接到它。
-- 正常停止、后台退出或后台崩溃断开控制连接时，服务停止本次内核并释放 TUN、路由和临时 DNS；后台收到清理完成的确认后才结束本次连接，服务随后空闲约 5 秒自动退出。关闭 UI 窗口或 UI 崩溃不会中断独立后台的连接；从应用或菜单栏选择退出时，后台和 TUN 连接一起停止。
+App updates preserve existing user configuration. Edit the user data copy or use the app; do not modify files inside the signed bundle. Node files, subscription files, and generated runtime configuration may contain credentials.
 
-TUN 配置启用出站网卡自动检测以避免回环，DNS 请求交给同一套分流策略，并开启反向域名映射。为避免系统 DNS 已指向 TUN 时循环解析，生成配置中的 `local` DNS 临时替换为直接拨号访问的 `223.5.5.5`；新 DNS 传输默认直连，不指定 `detour: "direct"`，以免内核启动时报错。保存的策略不变，自定义显式 DNS 上游保留。应用自身使用 DoH / DoT 的流量仍按普通连接处理，不会被还原成明文 DNS。
+### Command line
 
-授权服务通过仅当前用户可访问的本机 Unix Socket 接收配置，并核对对端 UID；不接受客户端指定其他可执行文件。规则快照由普通用户读取后传入私有临时目录，拒绝外部证书/密钥路径、执行插件以及非本地代理监听；自定义证书应使用内联内容。安装文件位于 `/Library/PrivilegedHelperTools/local.loop.tun`、`/Library/Application Support/LoopTUN/` 和 `/Library/LaunchDaemons/local.loop.tun.plist`。
-
-DNS 通过 macOS Dynamic Store 的临时独立服务接入，不覆盖 Wi-Fi / 以太网保存的 DNS。TUN 内核使用 root 私有临时工作目录，停机后删除，不向用户配置目录写入 root 缓存；规则库每次先读取随配置提供的快照，连接期间可更新，更新缓存不跨 TUN 会话保留。TUN 入站只注入运行配置，不写回主配置。
-
-开发运行 TUN 时先构建辅助程序，再显式指定（打包应用会自动查找）：
-
-```sh
-go build -o bin/loop-tun ./cmd/loop-tun
-make build
-./bin/loop -tun-helper "$PWD/bin/loop-tun"
-```
-
-打包后可手动安装、查看或移除 TUN 服务（首次开启也会自动安装）：
-
-```sh
-"/Applications/Loop.app/Contents/MacOS/loop-tun" -install-service
-"/Applications/Loop.app/Contents/MacOS/loop-tun" -service-status
-"/Applications/Loop.app/Contents/MacOS/loop-tun" -uninstall-service
-```
-
-安装/更新与移除由系统确认，状态查询不提权。服务绑定安装时的当前用户，其他用户不可调用；普通开发运行可给安装命令增加 `-core /绝对路径/sing-box`。
-
-`-render-config` 可导出 TUN 配置供 `sing-box check` 检查；`-check-connection` 刻意拒绝启动 TUN，整机接管需要在界面执行授权。当前只实现 macOS，尚未完成其他平台的 TUN 后端。新版本已通过三种分流模式 × 两种接管方式的内核配置检查，以及辅助进程断连清理测试；管理员授权后的实际 TUN 联网仍需在关闭其他 VPN 的环境下验证。
-
-## 分流规则与节点独立
-
-```text
-profiles/
-  config.json           唯一主配置：代理端口、日志、缓存、DNS、分流规则与规则库
-  nodes.json            手动节点的连接参数（私密，不提交）
-  subscriptions.json    每个订阅的独立节点快照（私密，不提交）
-  selection.json        旧版 Available 节点选择兼容文件（不提交）
-  policy-selections.json 其他策略组的独立选择（不提交）
-  settings.json         分流模式与 TUN 开关，首次切换后创建（不提交）
-  rule-sets/            首次启动使用的国内规则库快照
-```
-
-每次启动都读取上述文件，在用户数据目录生成 `runtime/config.json`，交给 sing-box。运行配置是生成物，不要手动编辑；它也含有节点凭据。
-
-分流规则引用策略组名称（例如 `Available`、`YouTube`、`Telegram`）或 `direct`（直连），不能绑定具体节点。旧 `proxy` 引用仍兼容并指向 `default_policy`；未指定该字段的旧配置初始指向 Available。该组删除后不会重新创建；可在策略页设置其他默认组。换节点只改策略选择；导入或更新订阅只改对应订阅的节点快照。订阅内的路由、DNS、入站、策略组都不会替换自己的配置。所有相关输入缺失或无效时会报错，不会自动切换直连。
-
-默认规则按顺序执行：
-
-1. 私有 IP、本地网络域名直连。
-2. `.cn` 与 `geosite-cn` 国内域名直连。
-3. 解析其余域名，再判断私有 IP、`geoip-cn` 国内 IP，匹配则直连。
-4. YouTube 域名走 YouTube 策略，Telegram 域名与官方公布的 IP 段走 Telegram 策略；默认均跟随 Available。
-5. 其余请求通过 Available 兜底。
-
-国内域名用系统 DNS；其余域名通过当前代理节点访问 Cloudflare DoH。节点服务器域名使用系统 DNS 做引导解析，避免循环依赖。节点自己的 `domain_resolver` 不会覆盖这套 DNS 策略。
-
-国内规则库采用 [MetaCubeX/meta-rules-dat](https://github.com/MetaCubeX/meta-rules-dat)，附带本地快照，首次运行不必等下载；sing-box 后续每天经当前代理更新并缓存。归属判断受规则库准确度影响。
-
-### 自定义规则
-
-编辑 `profiles/config.json`，在 `route.rules` 最前面添加自己的覆盖规则，例如：
-
-```json
-{ "domain_suffix": ["example.com"], "action": "route", "outbound": "direct" }
-```
-
-强制代理则把 `outbound` 改为 `Available` 或相应策略组名称；拦截用 `{"domain_suffix":["ads.example"],"action":"reject"}`。规则从上往下匹配；不要填写节点名或订阅名。若也要改变某域名的 DNS 解析路径，需要在 `dns.rules` 的最前面添加对应规则，引用 `dns-direct` 或 `dns-proxy`。
-
-也可直接在配置页编辑同一内容；停止连接后保存，下次启动生效。策略使用 sing-box JSON，当前没有 Loon 文本规则转换器。
-
-## 从 MiniProxy 升级
-
-应用现名为 **Loop**，应用包为 `Loop.app`，入口命令为 `loop`、`loopd`、`loopctl` 和 `loop-tun`；Go 模块名为 `local/loop`。默认数据目录为 `~/Library/Application Support/loop/`。
-
-打包应用首次使用默认配置时，会从旧 `MiniProxy` 数据目录复制节点、订阅、主配置、规则库、模式、策略选择和菜单栏偏好；旧文件保留。已有 Loop 配置不会被覆盖，自定义 `--profiles` / `--state-dir` 目录不自动导入旧数据。旧后台的运行配置、代理恢复记录、锁和日志不迁移，避免把旧进程的网络状态带到新后台。原有主题和界面偏好也会迁移到新应用 ID。
-
-请先通过旧版菜单栏退出 MiniProxy，再打开 Loop。登录自启绑定 macOS 应用标识，改名后请在 Loop 的“更多 → 开机自启”重新开启，并关闭旧版的登录项。
-
-## 独立后台与命令行
-
-现在 UI 与后台是两个独立进程。点击 `×` 会销毁 UI 进程并释放其界面资源；后台、代理连接和 macOS 菜单栏继续运行。菜单栏“显示主窗口”会重新启动 UI 并附加到当前连接；不会重启代理。`⌘Q` 或菜单栏“退出 Loop”停止整个应用。
-
-`loopd` 和 `loopctl` 都不依赖 Fyne。后台仅监听当前用户私有的 Unix Socket，无 TCP 端口；CLI 的 `--json` 返回 `ok / error / status / result`，失败退出码非零，适合脚本和 AI 直接调用。状态包含策略组、节点的稳定 key 和连接状态，不包含节点凭据或订阅链接。
-
-```sh
-make build
-# 仅启动后台，不打开 UI，也不会自动连接
-./bin/loopctl daemon start
-./bin/loopctl status --json
-./bin/loopctl connect --json
-./bin/loopctl mode rule --json  # direct / rule / global
-./bin/loopctl policy list --json
-# 从 policy list 的 members[].key 取得节点键或子策略名称
-./bin/loopctl policy select Available '<节点 key>' --json
-./bin/loopctl disconnect --json
-./bin/loopctl ui                # 打开或激活 UI
-./bin/loopctl daemon stop --json
-```
-
-打包后使用应用内自带的 CLI：
+The app includes `loopctl` for scripts and terminal use:
 
 ```sh
 "/Applications/Loop.app/Contents/MacOS/loopctl" status --json
+"/Applications/Loop.app/Contents/MacOS/loopctl" policy list --json
+"/Applications/Loop.app/Contents/MacOS/loopctl" mode rule --json
+"/Applications/Loop.app/Contents/MacOS/loopctl" disconnect --json
 ```
 
-AI 可直接执行这些命令，无需打开窗口或另建 MCP 服务。策略名、节点 key 中有空格时使用 shell 引号；应读取状态中的 `busy` 和命令错误，等待正在执行的操作完成后再重试。
+Use `direct`, `rule`, or `global` for the mode. See the [detailed guide (Chinese)](docs/user-guide.zh-CN.md#独立后台与命令行) for background service commands, policy selection, and isolated instances.
 
-纯命令行环境可使用 `daemon start --no-tray`，不创建菜单栏；此参数只影响新启动的后台。也可在前台直接运行 `./bin/loopd --no-tray --profiles /绝对路径/profiles --state-dir /绝对路径/state`，日志写到终端，SIGINT / SIGTERM 停止并恢复代理。
+## Development
 
-`--state-dir` 用于隔离后台及日志；独立实例同时指定独立的 `--profiles`，并避免端口或系统代理/TUN 接管冲突。所有控制命令使用相同状态目录。UI 默认启动后台和菜单栏；首次运行迁移原菜单栏偏好到状态目录 `desktop.json`。后台重启后旧 UI 会拒绝继续控制，关闭重开即可附加新实例。
-
-CLI `daemon stop` 直接停止后台，已打开的 UI 会保留草稿并显示后台不可用；关闭重开会确保后台重新启动。登录自启仍打开主应用，再启动后台，不会自动连接代理。
-
-## 开发运行
-
-需要 Go、Xcode Command Line Tools、sing-box 1.14.4+。
+Requirements: macOS, Go 1.27.1 (as specified in `go.mod`), Xcode Command Line Tools, and sing-box 1.14.4 or later.
 
 ```sh
+git clone https://github.com/voidvon/Loop.git
+cd Loop
 brew install sing-box
-# 新 checkout：从示例创建这三个文件，再填入节点。
-# cp profiles/nodes.example.json profiles/nodes.json
-# cp profiles/subscriptions.example.json profiles/subscriptions.json
-# cp profiles/selection.example.json profiles/selection.json
+
+# First checkout only: create local files, then fill in your node details.
+cp profiles/nodes.example.json profiles/nodes.json
+cp profiles/subscriptions.example.json profiles/subscriptions.json
+cp profiles/selection.example.json profiles/selection.json
 make run
 ```
 
-本地已经迁移了提供的 Megabox 节点。原来的 `config.json` 保留作为备份；默认启动使用 `profiles/config.json` 主配置，并独立管理节点与订阅。`go run ./cmd/loop -config config.json` 是绕过独立分流的完整配置调试模式。
+| Command | Purpose |
+| --- | --- |
+| `make prepare` | Reconstruct the pinned, patched Fyne dependency |
+| `make run` | Build the app and launch the UI |
+| `make build` | Build `loop`, `loopd`, `loopctl`, and `loop-tun` into `bin/` |
+| `make test` | Run race tests, including the Fyne painter checks |
+| `make test-headless` | Run the supported headless package tests |
+| `make vet` | Run Go static analysis |
+| `make package` | Create the macOS app and ZIP for the host architecture |
 
-### 管理节点
+Make targets prepare Fyne automatically. Run `make prepare` before using Go commands or an IDE directly. The repository tracks the Fyne patch and pinned upstream metadata; `third_party/fyne/` is generated and ignored by Git.
 
-“节点”页仅用于管理，不提供连接节点切换、搜索或底部操作按钮。右上角 `+` 直接打开添加弹窗，提供“单个节点”和“订阅链接”两个页签。单节点目前仅接受一个 `vless://` 链接，名称可选，留空使用链接名称或服务器地址。连接期间可以浏览，停止后才能修改。
-
-节点页左栏固定显示“本地节点”，下面按订阅列出来源及节点数量；右栏以三列圆角卡片网格显示选中来源的节点，名称最多显示两行，卡片下方展示协议和测速占位符 `--`（节点页尚未接入测速结果）；较窄窗口自动换行，长列表通过控件复用保持滚动流畅。右上角 `+` 可添加本地节点或订阅。右键本地节点可编辑或删除，右键左栏订阅可更新、编辑或删除该订阅；订阅内的节点通过订阅统一管理。浏览来源或点击节点不会改变当前连接节点。暂不提供节点组合、筛选组或代理链。
-
-切换连接节点可使用命令行：
-
-```sh
-go run ./cmd/loop -list-nodes
-go run ./cmd/loop -select-source manual -select-node megabox-40
-```
-
-旧的 `-select-source / -select-node` 参数只允许后台未运行时使用。在线选择请使用下方的 `policy select`，后台会自动重连并在失败时恢复原选择。
-
-### 导入、更新与切换订阅
-
-在“节点”页点击右上角 `+`，切换到“订阅链接”，填写名称和 URL，点击“获取并添加”。订阅使用 **Clash YAML**，获取时使用 `clash.meta` User-Agent，只读取 `proxies`，转换为 sing-box 节点后保存到 `subscriptions.json`；订阅 URL、类型、更新时间与节点快照一起保存，供以后刷新使用。请求、解析或内核检查失败时保留表单与旧数据。订阅拉取采用直连，超时 30 秒，最大 8 MB。
-
-支持 VLESS、VMess、Trojan、Shadowsocks、Hysteria2、TUIC、AnyTLS、SOCKS5、HTTP 的常用字段，以及 TLS/Reality、WebSocket/gRPC/HTTPUpgrade。暂不支持插件、链式节点、Base64 URI 订阅列表和其他传输方式；遇到不支持的节点会提示并拒绝本次导入。每个节点以订阅里的名称作为 ID，重复名称会报错。
-
-新增单节点入口仅接受 VLESS 分享链接。右键编辑已有本地节点仍保留原有分享链接、手动表单和高级 JSON 编辑能力，支持原有协议。保存时调用内核检查配置，这不等同于每个节点均已通过联网测试；添加成功后只切换节点页展示来源，使用哪个节点仍在策略页选择。
-
-命令行仍接受**本地 sing-box JSON 导出文件**，从 `outbounds` 提取节点，以原始 `tag` 作为 ID：
+### Packaging and versions
 
 ```sh
-go run ./cmd/loop -import-subscription /path/to/provider.json \
-  -subscription-id airport-a -subscription-name '机场 A'
-go run ./cmd/loop -list-nodes
-go run ./cmd/loop -select-source airport-a -select-node '香港 01'
-```
-
-界面右键订阅选择“更新订阅”或命令行用同一个 `subscription-id` 再次导入，即更新其节点快照；自己的规则、DNS、手动节点和当前选择都保留。如果新订阅删除了当前所选节点，更新会被拒绝并保留旧快照。此时先切到手动节点或其他来源，再更新和重新选择。
-
-### 配置位置
-
-- 开发运行默认使用工作目录下的 `profiles/`。
-- `.app` 首次运行将内置配置复制到 `~/Library/Application Support/loop/profiles/`，以后使用这份可编辑副本。重新打包或升级应用只补齐缺失文件，不覆盖自己的规则和节点。不要直接修改签名应用包内部。
-- `-profiles /绝对路径` 可以指定另一套独立配置目录。
-- 命令行修改已安装应用的配置，可运行 `dist/Loop.app/Contents/MacOS/loopctl -list-nodes` 等；或者给 `go run ./cmd/loop` 加 `-profiles "$HOME/Library/Application Support/loop/profiles"`。
-- 内核日志：`~/Library/Application Support/loop/sing-box.log`。
-- 运行配置：`~/Library/Application Support/loop/runtime/config.json`，权限 0600。
-
-### 验证
-
-```sh
-go test -race ./...
-go vet ./...
-go run ./cmd/loop -check-connection
-# 如需检查或手工运行生成配置，请写入自己的临时路径：
-go run ./cmd/loop -render-config /tmp/loop-config.json
-sing-box check -c /tmp/loop-config.json
-```
-
-节点连接检查不会修改系统代理。测试覆盖切换节点/订阅后的规则与 DNS 不变、订阅刷新不会注入策略、选中节点丢失时拒绝更新、应用升级保留自定义配置，以及系统代理恢复。
-
-## 打包
-
-```sh
-bash scripts/package-macos.sh
+make package
 open dist/Loop.app
+bash scripts/version.sh current
+bash scripts/version.sh next
 ```
 
-生成自带内核、公共主配置和规则库的 `.app`、本机 CPU 架构的 `Loop-v<版本>-macos-<架构>.zip`，用户无需安装 Go、Homebrew 或 sing-box。节点和订阅初始为空，首次使用请自行导入。打包不读取本地节点、订阅、选择、设置或备份。当前是同架构 macOS 15+ 的 ad-hoc 签名构建，不是 universal 包，尚未经 Developer ID 签名或 Apple 公证。
+Packaging bundles the core, shared configuration, rule snapshots, and dependency notices. It starts with empty nodes, subscriptions, and node selection, excluding local credentials and preferences. Set `LOOP_CORE` to use a specific sing-box executable and `LOOP_CORE_LICENSE` to supply its license file.
 
-应用图标源文件为 `internal/desktop/assets/app-icon.png`，同时嵌入桌面程序并用于侧栏标识；打包时自动生成包含标准与 Retina 尺寸的 `Loop.icns`，供 Finder 和 Dock 使用。
-
-包内保留 sing-box 和界面依赖的许可说明；Release 同时提供内核对应源码及依赖许可。
-
-### 发布版本
-
-`VERSION` 是应用包和 GitHub Release 的版本来源，首版为 `0.1.0`，标签使用 `v` 前缀。每次增加修订号；修订号达到 20 后，下次增加次版本并将修订号归零；次版本和修订号均达到 20 后，下次增加主版本并将其余两位归零：
+[`VERSION`](VERSION) is the version source for the app bundle; release tags use the `v` prefix. Patch and minor numbers range from 0 to 20:
 
 ```text
 0.1.0 → … → 0.1.20 → 0.2.0
@@ -333,23 +152,28 @@ open dist/Loop.app
 1.0.20 → 1.1.0
 ```
 
-```sh
-bash scripts/version.sh current
-# 计算下一版并写入 VERSION，随后提交、打包并发布对应标签。
-bash scripts/version.sh next > VERSION.next && mv VERSION.next VERSION
-make package
-```
+`version.sh next` prints the next version without changing files. Update `VERSION`, commit, and build before publishing the matching tag and release.
 
-目前仅发布 macOS；下载地址见 [GitHub Releases](https://github.com/voidvon/Loop/releases)。
+## Platform Notes
 
-## 使用边界
+- Only the macOS proxy and TUN backends are implemented. Stop other VPN/TUN clients before using TUN.
+- TUN installs a privileged helper on first use. Subsequent connections reuse it; a core or service update may require authorization again.
+- Launch at login opens the app without automatically connecting the proxy.
+- Switching physical networks while connected currently requires disconnecting and reconnecting.
+- PAC, automatic proxy discovery, and authenticated system proxies are not managed. Force-quitting the background service or a system interruption may require restoring proxy settings; use Quit Loop for normal shutdown.
 
-- 默认是 `127.0.0.1:2080` 系统代理模式；TUN 需在首页单独开启，首次安装服务时授权一次。登录自启在「更多 → 开机自启」设置，默认不自动注册。
-- 验证独立运行时退出 Karing/Loon 等 VPN，避免代理叠加。
-- 连接期间切换物理网络后，需要停止再启动。
-- 不修改 PAC、自动发现、认证代理；检测到这些配置时提示先处理。系统代理已有绕过列表保留，匹配地址可能不经过 sing-box。
-- 系统代理模式强制结束后台/断电可能留下系统代理；下一次启动连接会先根据 `proxy-state.json` 恢复，也可在系统设置手动关闭。系统代理模式强制结束后台还可能留下内核子进程，需要结束它再重试。TUN 模式能处理后台控制连接断开；同时强制终止授权辅助进程和内核、系统异常等情况尚不保证自动清理，不应与正常停止等同。
+## Documentation
 
-## Android
+| Document | Contents |
+| --- | --- |
+| [Detailed guide (Chinese)](docs/user-guide.zh-CN.md) | Configuration editing, nodes, policies, rules, TUN, diagnostics, CLI, and migration |
+| [Architecture (Chinese)](docs/architecture.md) | Process responsibilities, module boundaries, and lifecycle |
+| [UI memory notes (Chinese)](docs/ui-memory.md) | Font caching, measurements, and implementation details |
+| [Fyne patches (Chinese)](third_party/fyne-patches/README.md) | Pinned dependency and patch maintenance |
+| [Release history](https://github.com/voidvon/Loop/releases) | Downloads, release notes, checksums, and core source archives |
 
-当前只完成 macOS 后端。界面、配置合成和 `Backend` 接口可复用，但安卓整机代理仍需额外集成 libbox、VpnService、VPN 授权、前台服务和 TUN 管理。
+Issues and pull requests are welcome. Include your macOS version, CPU architecture, reproduction steps, and relevant logs. Remove node credentials and subscription URLs before sharing logs or configuration.
+
+## Acknowledgments
+
+Built with [sing-box](https://github.com/SagerNet/sing-box), [Fyne](https://github.com/fyne-io/fyne), and [go-fyne-pretty-view](https://github.com/ideaconnect/go-fyne-pretty-view). Bundled China routing snapshots come from [MetaCubeX/meta-rules-dat](https://github.com/MetaCubeX/meta-rules-dat).
