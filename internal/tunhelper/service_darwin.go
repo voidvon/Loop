@@ -54,6 +54,26 @@ func StatusService(ctx context.Context) (ServiceStatus, error) {
 	return serviceStatusAt(ctx, ServiceSocket, verifyRootPeer)
 }
 
+// DialService authenticates the privileged peer and opens an owned session.
+// The caller must half-close writes, then read EOF before releasing the session.
+func DialService(ctx context.Context, token string) (*net.UnixConn, error) {
+	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", ServiceSocket)
+	if err != nil {
+		return nil, err
+	}
+	if err := verifyRootPeer(conn); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+	if err := json.NewEncoder(conn).Encode(serviceBootstrap{Action: "connect", Token: token}); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	conn.SetWriteDeadline(time.Time{})
+	return conn.(*net.UnixConn), nil
+}
+
 func EnsureService(ctx context.Context, helper, core string) error {
 	coreSHA, err := hashFile(core)
 	if err != nil {
@@ -232,6 +252,9 @@ func InstallService(core string, uid int) error {
 	if os.Geteuid() != 0 || uid <= 0 || !filepath.IsAbs(core) {
 		return errors.New("安装 TUN 服务需要管理员授权与普通用户 UID")
 	}
+	if !serviceSocketActivationAvailable {
+		return errors.New("TUN 按需服务需要启用 CGO 构建辅助程序")
+	}
 	for _, parent := range []string{"/Library", "/Library/Application Support"} {
 		if err := verifyRootPath(parent, true); err != nil {
 			return err
@@ -275,17 +298,7 @@ func InstallService(core string, uid int) error {
 	if err != nil {
 		return err
 	}
-	plist := `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>Label</key><string>local.loop.tun</string>
-<key>ProgramArguments</key><array><string>/Library/PrivilegedHelperTools/local.loop.tun</string><string>-service</string></array>
-<key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
-<key>ExitTimeOut</key><integer>12</integer>
-<key>Umask</key><integer>63</integer>
-<key>StandardErrorPath</key><string>/Library/Application Support/LoopTUN/service.log</string>
-</dict></plist>
-`
+	plist := serviceLaunchPlist(uid)
 	if err := stopInstalledService(); err != nil {
 		return err
 	}
@@ -305,6 +318,26 @@ func InstallService(core string, uid int) error {
 		return fmt.Errorf("注册 TUN 服务失败：%w\n%s", err, output)
 	}
 	return nil
+}
+
+func serviceLaunchPlist(uid int) string {
+	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>local.loop.tun</string>
+<key>ProgramArguments</key><array><string>/Library/PrivilegedHelperTools/local.loop.tun</string><string>-service</string></array>
+<key>Sockets</key><dict><key>Control</key><dict>
+<key>SockPathName</key><string>/var/run/local.loop.tun.sock</string>
+<key>SockPathOwner</key><integer>%d</integer>
+<key>SockPathMode</key><integer>384</integer>
+<key>SockType</key><string>stream</string>
+</dict></dict>
+<key>ThrottleInterval</key><integer>1</integer>
+<key>ExitTimeOut</key><integer>12</integer>
+<key>Umask</key><integer>63</integer>
+<key>StandardErrorPath</key><string>/Library/Application Support/LoopTUN/service.log</string>
+</dict></plist>
+`, uid)
 }
 
 func RunInstalledService(ctx context.Context) error {
@@ -335,28 +368,12 @@ func RunInstalledService(ctx context.Context) error {
 	if installation.UID <= 0 {
 		return errors.New("无效的 TUN 服务用户")
 	}
-	if info, err := os.Lstat(ServiceSocket); err == nil {
-		if info.Mode()&os.ModeSocket == 0 {
-			return errors.New("TUN 服务 Socket 被非 Socket 文件占用")
-		}
-		if err := os.Remove(ServiceSocket); err != nil {
-			return err
-		}
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-	listener, err := net.Listen("unix", ServiceSocket)
+	listener, err := activatedServiceListener()
 	if err != nil {
 		return err
 	}
 	defer listener.Close()
-	if err := os.Chmod(ServiceSocket, 0600); err != nil {
-		return err
-	}
-	if err := os.Chown(ServiceSocket, installation.UID, -1); err != nil {
-		return err
-	}
-	return serveService(ctx, listener, installation, filepath.Join(ServiceDirectory, "sing-box"), socketUID, CheckRouteConflict, startDNS)
+	return serveService(ctx, listener, installation, filepath.Join(ServiceDirectory, "sing-box"), socketUID, CheckRouteConflict, startDNS, 5*time.Second)
 }
 
 func UninstallService(ctx context.Context, helper string) error {

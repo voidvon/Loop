@@ -11,9 +11,9 @@ import (
 )
 
 func sidebarBrand(status *widget.Label) fyne.CanvasObject {
-	icon := canvas.NewImageFromResource(theme.NewColoredResource(iconLoop, colorSecondary))
+	icon := canvas.NewImageFromResource(appIcon)
 	icon.FillMode = canvas.ImageFillContain
-	icon.SetMinSize(fyne.NewSize(28, 34))
+	icon.SetMinSize(fyne.NewSize(34, 34))
 	name := dashboardValue(app.DisplayName, theme.SizeNameText)
 	name.Wrapping = fyne.TextWrapOff
 	status.SizeName = theme.SizeNameCaptionText

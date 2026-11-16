@@ -24,9 +24,15 @@ func managedTestConfig() map[string]any {
 type testService struct {
 	socket, stopped string
 	released        atomic.Int32
+	done            <-chan struct{}
 }
 
 func startTestService(t *testing.T, peer int) *testService {
+	t.Helper()
+	return startTestServiceWithIdle(t, peer, 0)
+}
+
+func startTestServiceWithIdle(t *testing.T, peer int, idleTimeout time.Duration) *testService {
 	t.Helper()
 	dir, err := os.MkdirTemp("/tmp", "loop-service-test-")
 	if err != nil {
@@ -44,24 +50,85 @@ func startTestService(t *testing.T, peer int) *testService {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
+	done := make(chan struct{})
+	s.done = done
+	var serveErr error
 	go func() {
-		done <- serveService(ctx, listener, serviceInstallation{UID: 1001, CoreSHA: "pinned"}, core,
+		defer close(done)
+		serveErr = serveService(ctx, listener, serviceInstallation{UID: 1001, CoreSHA: "pinned"}, core,
 			func(net.Conn) (int, error) { return peer, nil }, func() error { return nil },
-			func(map[string]any) (func(), <-chan struct{}, error) { return func() { s.released.Add(1) }, nil, nil })
+			func(map[string]any) (func(), <-chan struct{}, error) { return func() { s.released.Add(1) }, nil, nil }, idleTimeout)
 	}()
 	t.Cleanup(func() {
 		cancel()
 		select {
-		case err := <-done:
-			if err != nil {
-				t.Error(err)
+		case <-done:
+			if serveErr != nil {
+				t.Error(serveErr)
 			}
 		case <-time.After(8 * time.Second):
 			t.Error("service did not clean up")
 		}
 	})
 	return s
+}
+
+func TestInstalledServiceExitsWhenIdle(t *testing.T) {
+	s := startTestServiceWithIdle(t, 1001, 100*time.Millisecond)
+	select {
+	case <-s.done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("idle service stayed resident")
+	}
+	if s.released.Load() != 0 {
+		t.Fatal("idle service unexpectedly started DNS")
+	}
+}
+
+func TestInstalledServiceIdleExitWaitsForSessionCleanup(t *testing.T) {
+	const idle = 200 * time.Millisecond
+	s := startTestServiceWithIdle(t, 1001, idle)
+	conn, decoder := s.connect(t)
+	startServiceCore(t, conn, decoder)
+	select {
+	case <-s.done:
+		t.Fatal("service exited with a live tunnel")
+	case <-time.After(3 * idle):
+	}
+	if s.released.Load() != 0 {
+		t.Fatal("live session DNS was released")
+	}
+	conn.CloseWrite()
+	for {
+		var message Message
+		err := decoder.Decode(&message)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if s.released.Load() != 1 {
+		t.Fatal("disconnect acknowledged before DNS cleanup")
+	}
+	// A new connection during the grace period keeps the service available.
+	reconnected, nextDecoder := s.connect(t)
+	startServiceCore(t, reconnected, nextDecoder)
+	select {
+	case <-s.done:
+		t.Fatal("idle timer interrupted a reconnected tunnel")
+	case <-time.After(3 * idle):
+	}
+	reconnected.Close()
+	select {
+	case <-s.done:
+		if s.released.Load() != 2 {
+			t.Fatal("service exited before cleaning up the reconnected tunnel")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("service stayed resident after tunnel cleanup")
+	}
 }
 
 func (s *testService) connect(t *testing.T) (*net.UnixConn, *json.Decoder) {

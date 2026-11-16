@@ -7,18 +7,32 @@ package statusbar
 #cgo LDFLAGS: -framework Cocoa
 #include <stdlib.h>
 void loopStatusRun(char *model);
+void loopStatusAddIcon(void *png, int length);
 void loopStatusUpdate(char *model);
 void loopStatusStop(void);
 */
 import "C"
 
 import (
+	_ "embed"
 	"encoding/json"
 	"sync"
 	"unsafe"
 
 	"local/loop/internal/app"
 )
+
+// Embed the template in the daemon so development and packaged runs use the
+// same image without depending on a bundle path or loading the desktop UI.
+//
+//go:embed assets/loop-template.png
+var statusIcon1x []byte
+
+//go:embed assets/loop-template@2x.png
+var statusIcon2x []byte
+
+//go:embed assets/loop-template@3x.png
+var statusIcon3x []byte
 
 var callbacks struct {
 	sync.RWMutex
@@ -42,6 +56,9 @@ func loopStatusAction(data *C.char) {
 // Run owns Cocoa's main-thread loop. State updates arrive from the controller;
 // no window, font atlas, Fyne renderer, or OpenGL context is created.
 func Run(initial State, updates <-chan State, stop <-chan struct{}, action func(app.Operation)) error {
+	for _, png := range [][]byte{statusIcon1x, statusIcon2x, statusIcon3x} {
+		C.loopStatusAddIcon(unsafe.Pointer(&png[0]), C.int(len(png)))
+	}
 	callbacks.Lock()
 	callbacks.action = action
 	callbacks.Unlock()

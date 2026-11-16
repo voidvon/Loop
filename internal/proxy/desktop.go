@@ -80,7 +80,7 @@ func HasTUN(config []byte) bool {
 func (d *Desktop) Start(ctx context.Context) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if d.cmd != nil {
+	if d.done != nil {
 		return errors.New("代理已启动")
 	}
 	if err := os.MkdirAll(d.StateDir, 0700); err != nil {
@@ -92,7 +92,7 @@ func (d *Desktop) Start(ctx context.Context) error {
 	}
 	d.lock = lock
 	defer func() {
-		if d.cmd == nil {
+		if d.done == nil {
 			d.releaseLock()
 		}
 	}()
@@ -127,37 +127,38 @@ func (d *Desktop) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(d.CorePath, "run", "-c", configPath, "-D", d.StateDir)
+	var wait func() error
+	var startErr error
 	if HasTUN(config) {
-		d.tun, cmd, err = prepareTUN(d.HelperPath, d.CorePath)
+		d.tun, err = prepareTUN(d.HelperPath, d.CorePath)
 		if err != nil {
 			d.logFile.Close()
 			d.logFile = nil
 			return err
 		}
-	}
-	cmd.Stdout, cmd.Stderr = d.logFile, d.logFile
-	if err := cmd.Start(); err != nil {
-		if d.tun != nil {
-			d.tun.cleanup()
-			d.tun = nil
+		startErr = d.tun.connect(ctx, config, d.logFile)
+		d.done = d.tun.done
+		session := d.tun
+		wait = func() error { <-session.done; return session.exitError() }
+	} else {
+		cmd := exec.Command(d.CorePath, "run", "-c", configPath, "-D", d.StateDir)
+		cmd.Stdout, cmd.Stderr = d.logFile, d.logFile
+		if err := cmd.Start(); err != nil {
+			d.logFile.Close()
+			d.logFile = nil
+			return err
 		}
-		d.logFile.Close()
-		d.logFile = nil
-		return err
+		d.cmd, d.done = cmd, make(chan struct{})
+		done := d.done
+		wait = func() error { err := cmd.Wait(); close(done); return err }
 	}
-	d.cmd, d.done = cmd, make(chan struct{})
 	done := d.done
 	go func() {
-		err := cmd.Wait()
-		close(done)
+		err := wait()
 		d.mu.Lock()
-		unexpected := d.cmd == cmd
+		unexpected := d.done == done
 		var cleanup error
 		if unexpected {
-			if d.tun != nil {
-				err = errors.Join(err, d.tun.exitError())
-			}
 			cleanup = d.stopLocked()
 		}
 		d.mu.Unlock()
@@ -165,10 +166,8 @@ func (d *Desktop) Start(ctx context.Context) error {
 			d.OnExit(errors.Join(fmt.Errorf("sing-box 意外退出: %v", err), cleanup))
 		}
 	}()
-	if d.tun != nil {
-		if err := d.tun.connect(ctx, done, d.CorePath, config, d.logFile); err != nil {
-			return errors.Join(err, d.stopLocked())
-		}
+	if startErr != nil {
+		return errors.Join(startErr, d.stopLocked())
 	}
 	for _, endpoint := range endpoints.Addresses() {
 		if err := waitReady(ctx, endpoint, done); err != nil {
@@ -275,7 +274,7 @@ func (d *Desktop) Stop() error {
 func (d *Desktop) Running() bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if d.cmd == nil {
+	if d.done == nil {
 		return false
 	}
 	select {
@@ -291,7 +290,7 @@ func (d *Desktop) stopLocked() error {
 	if d.proxy != nil {
 		restoreErr = d.proxy.restore()
 	}
-	if d.cmd != nil {
+	if d.done != nil {
 		if d.tun != nil {
 			d.tun.stop()
 		} else {
@@ -301,19 +300,16 @@ func (d *Desktop) stopLocked() error {
 		case <-d.done:
 		case <-time.After(8 * time.Second):
 			if d.tun != nil {
-				// Before authorization the helper has not connected and owns no
-				// core; a late approval cannot connect to the closed socket.
-				if d.tun.helperConnected() {
-					return errors.New("等待 TUN 内核清理超时，请重试停止")
-				}
+				return errors.New("等待 TUN 内核清理超时，请重试停止")
 			}
 			d.cmd.Process.Kill()
 			<-d.done
 		}
 		d.cmd = nil
+		d.done = nil
 	}
 	if d.tun != nil {
-		d.tun.cleanup()
+		restoreErr = errors.Join(restoreErr, d.tun.cleanup())
 		d.tun = nil
 	}
 	if d.logFile != nil {

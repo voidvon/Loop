@@ -51,6 +51,7 @@ func Run(options application.Options) error {
 		return fmt.Errorf("迁移界面偏好：%w", err)
 	}
 	a := app.NewWithID(application.ID)
+	a.SetIcon(appIcon)
 	appearance := newClientTheme()
 	appearance.mode = a.Preferences().StringWithFallback("appearance", appearanceSystem)
 	if fonts, err := loadSystemFonts(); err != nil {

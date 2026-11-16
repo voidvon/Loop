@@ -48,7 +48,6 @@ var (
 	iconExport     = outlineIcon("export", `<path d="M14 3h7v17H3v-2M3 10h7V3M3 10l11-7"/>`)
 	iconUp         = outlineIcon("up", `<path d="M12 21V3m-7 7 7-7 7 7"/>`)
 	iconDown       = outlineIcon("down", `<path d="M12 3v18m-7-7 7 7 7-7"/>`)
-	iconLoop       = outlineIcon("brand", `<path d="M8.5 7.5a5 5 0 0 1 7.1 0l2.9 2.9a5 5 0 0 1-7.1 7.1l-1.3-1.3M15.5 16.5a5 5 0 0 1-7.1 0l-2.9-2.9a5 5 0 0 1 7.1-7.1l1.3 1.3" stroke-width="3"/>`)
 )
 
 var outlineThemeIcons = map[fyne.ThemeIconName]fyne.Resource{

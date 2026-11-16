@@ -16,6 +16,15 @@ go run ./cmd/loop -profiles "$project_dir/profiles" -render-config "$check_dir/c
 
 app_dir="$project_dir/dist/Loop.app"
 mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources/licenses"
+icon_source="$project_dir/internal/desktop/assets/app-icon.png"
+iconset_dir="$check_dir/Loop.iconset"
+mkdir -p "$iconset_dir"
+for size in 16 32 128 256 512; do
+  sips -z "$size" "$size" "$icon_source" --out "$iconset_dir/icon_${size}x${size}.png" >/dev/null
+  retina_size=$((size * 2))
+  sips -z "$retina_size" "$retina_size" "$icon_source" --out "$iconset_dir/icon_${size}x${size}@2x.png" >/dev/null
+done
+iconutil -c icns "$iconset_dir" -o "$app_dir/Contents/Resources/Loop.icns"
 background_app="$app_dir/Contents/Helpers/loop-background.app"
 mkdir -p "$background_app/Contents/MacOS"
 go build -trimpath -ldflags='-s -w' -o "$app_dir/Contents/MacOS/loop" ./cmd/loop
@@ -42,9 +51,10 @@ cat > "$app_dir/Contents/Info.plist" <<'PLIST'
   <key>CFBundleIdentifier</key><string>local.loop.desktop</string>
   <key>CFBundleName</key><string>Loop</string>
   <key>CFBundleDisplayName</key><string>Loop</string>
+  <key>CFBundleIconFile</key><string>Loop.icns</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.16.16</string>
-  <key>CFBundleVersion</key><string>44</string>
+  <key>CFBundleShortVersionString</key><string>0.16.18</string>
+  <key>CFBundleVersion</key><string>46</string>
   <key>LSMinimumSystemVersion</key><string>15.0</string>
   <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
@@ -58,8 +68,8 @@ cat > "$background_app/Contents/Info.plist" <<'PLIST'
   <key>CFBundleIdentifier</key><string>local.loop.background</string>
   <key>CFBundleName</key><string>Loop Background</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.16.16</string>
-  <key>CFBundleVersion</key><string>44</string>
+  <key>CFBundleShortVersionString</key><string>0.16.18</string>
+  <key>CFBundleVersion</key><string>46</string>
   <key>LSMinimumSystemVersion</key><string>15.0</string>
   <key>LSUIElement</key><true/>
 </dict></plist>

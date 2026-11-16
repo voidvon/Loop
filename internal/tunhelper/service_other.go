@@ -5,7 +5,12 @@ package tunhelper
 import (
 	"context"
 	"errors"
+	"net"
 )
+
+func DialService(context.Context, string) (*net.UnixConn, error) {
+	return nil, errors.New("TUN 服务仅支持 macOS")
+}
 
 func RunServiceClient(context.Context, string, string, string, string) error {
 	return errors.New("TUN 服务仅支持 macOS")

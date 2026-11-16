@@ -4,6 +4,57 @@
 
 extern void loopStatusAction(char *data);
 static NSStatusItem *proxyStatusItem;
+static NSImage *proxyStatusIcon;
+static NSMutableDictionary *proxyModeIcons;
+
+void loopStatusAddIcon(void *png, int length) {
+    @autoreleasepool {
+        if (!proxyStatusIcon) {
+            proxyStatusIcon = [[NSImage alloc] initWithSize:NSMakeSize(18,18)];
+            proxyStatusIcon.template = YES;
+        }
+        NSData *data = [NSData dataWithBytes:png length:(NSUInteger)length];
+        NSBitmapImageRep *rep = [NSBitmapImageRep imageRepWithData:data];
+        if (rep) {
+            rep.size = NSMakeSize(18,18);
+            [proxyStatusIcon addRepresentation:rep];
+        }
+    }
+}
+
+// All three modes share the same silhouette and transparent lower-right
+// cutout. Compose the glyph inside the 18-point image, at native pixel scales.
+static NSImage *proxyIconForLetter(NSString *letter) {
+    if (!letter) return proxyStatusIcon;
+    if (!proxyModeIcons) proxyModeIcons = [[NSMutableDictionary alloc] init];
+    NSImage *cached = proxyModeIcons[letter];
+    if (cached) return cached;
+    NSImage *image = [[[NSImage alloc] initWithSize:NSMakeSize(18,18)] autorelease];
+    for (NSInteger scale = 1; scale <= 3; scale++) {
+        NSBitmapImageRep *rep = [[[NSBitmapImageRep alloc]
+            initWithBitmapDataPlanes:NULL pixelsWide:18*scale pixelsHigh:18*scale
+            bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO
+            colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:0 bitsPerPixel:0] autorelease];
+        NSGraphicsContext *context = [NSGraphicsContext graphicsContextWithBitmapImageRep:rep];
+        [NSGraphicsContext saveGraphicsState];
+        [NSGraphicsContext setCurrentContext:context];
+        CGContextScaleCTM(context.CGContext, scale, scale);
+        CGContextTranslateCTM(context.CGContext, 0, -1);
+        [proxyStatusIcon drawInRect:NSMakeRect(0,1,18,18) fromRect:NSZeroRect
+                         operation:NSCompositingOperationSourceOver fraction:1];
+        NSRectFillUsingOperation(NSMakeRect(10.5,0,7.5,10.5), NSCompositingOperationClear);
+        [letter drawAtPoint:NSMakePoint(11,0) withAttributes:@{
+            NSFontAttributeName:[NSFont monospacedSystemFontOfSize:9.5 weight:NSFontWeightSemibold],
+            NSForegroundColorAttributeName:NSColor.blackColor
+        }];
+        [NSGraphicsContext restoreGraphicsState];
+        rep.size = NSMakeSize(18,18);
+        [image addRepresentation:rep];
+    }
+    image.template = YES;
+    proxyModeIcons[letter] = image;
+    return image;
+}
 
 @interface LoopStatusDelegate : NSObject <NSApplicationDelegate>
 - (void)invoke:(NSMenuItem *)sender;
@@ -53,22 +104,16 @@ static void proxyUpdate(NSString *json) {
     NSDictionary *prefs = state[@"preferences"];
     BOOL letters = [prefs[@"show_mode_letter"] boolValue];
     CGFloat opacity = (![state[@"running"] boolValue] && [prefs[@"dim_disconnected"] boolValue]) ? 0.5 : 1.0;
-    NSImage *image = [[[NSImage alloc] initWithSize:NSMakeSize(18,18)] autorelease];
-    [image lockFocus];
-    [[NSColor colorWithWhite:0 alpha:opacity] set];
-    NSBezierPath *screen = [NSBezierPath bezierPathWithRect:letters ? NSMakeRect(1.5,6,10.5,8) : NSMakeRect(2,5,14,10)];
-    screen.lineWidth = 1.5; [screen stroke];
-    NSBezierPath *base = [NSBezierPath bezierPath];
-    [base moveToPoint:NSMakePoint(letters?0:1,3.5)]; [base lineToPoint:NSMakePoint(letters?12:17,3.5)];
-    base.lineWidth = 1.5; [base stroke];
+    NSStatusBarButton *button = proxyStatusItem.button;
+    NSString *letter = nil;
     if (letters) {
         NSString *mode = state[@"mode"];
-        NSString *letter = [mode isEqualToString:@"global"] ? @"G" : ([mode isEqualToString:@"direct"] ? @"D" : @"R");
-        [letter drawAtPoint:NSMakePoint(10,0) withAttributes:@{NSFontAttributeName:[NSFont boldSystemFontOfSize:9],NSForegroundColorAttributeName:[NSColor colorWithWhite:0 alpha:opacity]}];
+        letter = [mode isEqualToString:@"global"] ? @"G" : ([mode isEqualToString:@"direct"] ? @"D" : @"R");
     }
-    [image unlockFocus];
-    image.template = YES;
-    proxyStatusItem.button.image = image;
+    button.image = proxyIconForLetter(letter);
+    button.imagePosition = NSImageOnly;
+    button.title = @"";
+    button.alphaValue = opacity;
     proxyStatusItem.button.toolTip = [state[@"running"] boolValue] ? @"Loop · 已连接" : @"Loop · 未连接";
     proxyStatusItem.menu = proxyMenu(model[@"items"]);
 }
@@ -84,6 +129,8 @@ void loopStatusRun(char *model) {
         [NSApp run];
         [[NSStatusBar systemStatusBar] removeStatusItem:proxyStatusItem];
         [proxyStatusItem release]; proxyStatusItem = nil;
+        [proxyStatusIcon release]; proxyStatusIcon = nil;
+        [proxyModeIcons release]; proxyModeIcons = nil;
         NSApp.delegate = nil;
         [proxyDelegate release]; proxyDelegate = nil;
     }

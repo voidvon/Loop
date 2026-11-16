@@ -12,6 +12,7 @@ import (
 var (
 	routingContextPattern  = regexp.MustCompile(`\[([0-9]+) [^\]]+\] (.*)`)
 	routingMatchPattern    = regexp.MustCompile(`^router: match\[([0-9]+)\]\s*(.*?)\s*=>\s*(.*)$`)
+	routingResolvedPattern = regexp.MustCompile(`^router: resolved \[(.*)\]$`)
 	routingOutboundPattern = regexp.MustCompile(`^outbound/[^\[]+\[(.*)\]: outbound connection to (\S+)$`)
 	routingBlockPattern    = regexp.MustCompile(`^outbound/block\[(.*)\]: blocked (?:packet )?connection to (\S+)$`)
 )
@@ -24,6 +25,7 @@ type routingTrace struct {
 	pending      string
 	id           string
 	destination  string
+	resolved     map[string]bool
 	rule, target string
 	rejected     bool
 	outputs      []string
@@ -63,6 +65,17 @@ func (t *routingTrace) line(line string) {
 	if t.id == "" || t.id != id {
 		return
 	}
+	// Some proxy outbounds log a resolved IP instead of the original domain.
+	// Only the router's result belongs to the destination: DNS transport and
+	// proxy-server lookups can share this context and must not count as its route.
+	if match := routingResolvedPattern.FindStringSubmatch(message); match != nil {
+		t.resolved = make(map[string]bool)
+		for _, address := range strings.Fields(match[1]) {
+			if ip := net.ParseIP(address); ip != nil && len(t.resolved) < 64 {
+				t.resolved[ip.String()] = true
+			}
+		}
+	}
 	if match := routingMatchPattern.FindStringSubmatch(message); match != nil {
 		index, _ := strconv.Atoi(match[1])
 		route, _ := t.config["route"].(map[string]any)
@@ -77,6 +90,7 @@ func (t *routingTrace) line(line string) {
 			if err == nil {
 				if override := stringField(rule, "override_address"); override != "" {
 					host = override
+					t.resolved = nil
 				}
 				if number, ok := rule["override_port"].(float64); ok && number > 0 {
 					port = strconv.Itoa(int(number))
@@ -93,12 +107,28 @@ func (t *routingTrace) line(line string) {
 			t.rule = fmt.Sprintf("规则 #%d", index+1)
 		}
 	}
-	if match := routingOutboundPattern.FindStringSubmatch(message); match != nil && strings.EqualFold(match[2], t.destination) && len(t.outputs) < 32 {
+	if match := routingOutboundPattern.FindStringSubmatch(message); match != nil && t.matchesDestination(match[2]) && len(t.outputs) < 32 {
 		t.outputs = append(t.outputs, match[1])
 	}
-	if match := routingBlockPattern.FindStringSubmatch(message); match != nil && strings.EqualFold(match[2], t.destination) && len(t.outputs) < 32 {
+	if match := routingBlockPattern.FindStringSubmatch(message); match != nil && t.matchesDestination(match[2]) && len(t.outputs) < 32 {
 		t.outputs = append(t.outputs, match[1])
 	}
+}
+
+func (t *routingTrace) matchesDestination(destination string) bool {
+	if strings.EqualFold(destination, t.destination) {
+		return true
+	}
+	_, port, err := net.SplitHostPort(t.destination)
+	if err != nil {
+		return false
+	}
+	host, actualPort, err := net.SplitHostPort(destination)
+	if err != nil || actualPort != port {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && t.resolved[ip.String()]
 }
 
 func (t *routingTrace) apply(result *RoutingResult) {

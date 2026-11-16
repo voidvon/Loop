@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -135,6 +136,64 @@ func TestRoutingProberRuleSetAndFailedNode(t *testing.T) {
 	result, err = (RoutingProber{CorePath: core, Timeout: time.Second}).Run(context.Background(), routingTestConfig(bad, nil), origin.URL)
 	if err != nil || result.Error == "" || result.Outbound != "failed-node" || result.Duration != 0 {
 		t.Fatalf("failed node lost route: %+v %v", result, err)
+	}
+}
+
+// Unlike HTTP CONNECT, Trojan dials the router's resolved IP addresses. Keep a
+// real local Trojan server here so a domain-only trace matcher cannot pass.
+func TestRoutingProberResolvedTrojanDestination(t *testing.T) {
+	core := latencyTestCore(t)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := listener.Addr().String()
+	port := listener.Addr().(*net.TCPAddr).Port
+	listener.Close()
+	server := map[string]any{
+		"log": map[string]any{"level": "error"},
+		"inbounds": []any{map[string]any{"type": "trojan", "tag": "test-trojan", "listen": "127.0.0.1", "listen_port": port,
+			"users": []any{map[string]any{"password": "test-password"}}}},
+		"outbounds": []any{map[string]any{"type": "direct", "tag": "direct"}},
+	}
+	dir := t.TempDir()
+	data, err := json.Marshal(server)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "server.json")
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, core, "run", "-c", path, "-D", dir)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() { cmd.Wait(); close(done) }()
+	defer func() { cancel(); <-done }()
+	if err := waitReady(ctx, address, done); err != nil {
+		t.Fatal(err)
+	}
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }))
+	defer origin.Close()
+	node := ProbeTarget{Key: "trojan-node", Outbound: map[string]any{"type": "trojan", "server": "127.0.0.1", "server_port": port, "password": "test-password"}}
+	for _, explicit := range []bool{false, true} {
+		t.Run(map[bool]string{false: "final", true: "domain rule"}[explicit], func(t *testing.T) {
+			rules := []any{map[string]any{"action": "resolve", "strategy": "ipv4_only"}}
+			wantRule, wantChain := "FINAL", []string{"Available", "US", "trojan-node"}
+			if explicit {
+				rules = append(rules, map[string]any{"domain": "localhost", "action": "route", "outbound": "US"})
+				wantRule, wantChain = "domain=localhost", []string{"US", "trojan-node"}
+			}
+			value := strings.Replace(origin.URL, "127.0.0.1", "localhost", 1)
+			result, err := (RoutingProber{CorePath: core, Timeout: 3 * time.Second}).Run(ctx, routingTestConfig(node, rules), value)
+			if err != nil || result.Error != "" || result.StatusCode != 204 || result.Outbound != node.Key || result.Rule != wantRule || !reflect.DeepEqual(result.Chain, wantChain) {
+				t.Fatalf("resolved Trojan route: %+v %v", result, err)
+			}
+		})
 	}
 }
 

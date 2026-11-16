@@ -16,7 +16,7 @@ import (
 
 // Bump when the installed privileged implementation must be upgraded. Ordinary
 // UI releases keep this version, so they don't require another installation.
-const ServiceProtocol = 2
+const ServiceProtocol = 3
 const ServiceLabel = "local.loop.tun"
 const ServiceSocket = "/var/run/local.loop.tun.sock"
 const ServiceDirectory = "/Library/Application Support/LoopTUN"
@@ -82,14 +82,29 @@ func serviceStatusAt(ctx context.Context, socket string, verifyPeer func(net.Con
 	return status, err
 }
 
-// The service may outlive Loop, but each core/DNS session belongs to exactly
-// one authenticated connection. Disconnecting releases it before another starts.
+// Each core/DNS session belongs to exactly one authenticated connection.
+// The socket remains owned by launchd when the idle service exits.
 func serveService(ctx context.Context, listener net.Listener, installation serviceInstallation, core string,
 	peerUID func(net.Conn) (int, error), routeCheck func() error,
-	setupDNS func(map[string]any) (func(), <-chan struct{}, error)) error {
+	setupDNS func(map[string]any) (func(), <-chan struct{}, error), idleTimeout time.Duration) error {
 	var active sync.Mutex
 	var mu sync.Mutex
 	connections := map[net.Conn]bool{}
+	var idleTimer *time.Timer
+	var stopping bool
+	idleDeadline := time.Now().Add(idleTimeout)
+	if idleTimeout > 0 {
+		idleTimer = time.AfterFunc(idleTimeout, func() {
+			mu.Lock()
+			defer mu.Unlock()
+			// A previously fired callback may run after a new idle period
+			// has begun. It must not shorten that period.
+			if !stopping && len(connections) == 0 && !time.Now().Before(idleDeadline) {
+				stopping = true
+				listener.Close()
+			}
+		})
+	}
 	var workers sync.WaitGroup
 	stop := context.AfterFunc(ctx, func() {
 		listener.Close()
@@ -103,6 +118,10 @@ func serveService(ctx context.Context, listener net.Listener, installation servi
 	defer func() {
 		listener.Close()
 		mu.Lock()
+		stopping = true
+		if idleTimer != nil {
+			idleTimer.Stop()
+		}
 		for conn := range connections {
 			conn.Close()
 		}
@@ -112,19 +131,38 @@ func serveService(ctx context.Context, listener net.Listener, installation servi
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			if ctx.Err() != nil {
+			mu.Lock()
+			idleStopped := stopping
+			mu.Unlock()
+			if ctx.Err() != nil || idleStopped {
+				// Accept may have returned a connection just before the idle
+				// timer closed the listener. Finish that request before exiting.
+				if idleStopped {
+					workers.Wait()
+				}
 				return nil
 			}
 			return err
 		}
 		mu.Lock()
 		connections[conn] = true
+		if idleTimer != nil {
+			idleTimer.Stop()
+		}
 		mu.Unlock()
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
 			defer conn.Close()
-			defer func() { mu.Lock(); delete(connections, conn); mu.Unlock() }()
+			defer func() {
+				mu.Lock()
+				defer mu.Unlock()
+				delete(connections, conn)
+				if idleTimer != nil && !stopping && len(connections) == 0 {
+					idleDeadline = time.Now().Add(idleTimeout)
+					idleTimer.Reset(idleTimeout)
+				}
+			}()
 			uid, err := peerUID(conn)
 			if err != nil || (uid != installation.UID && uid != 0) {
 				return
